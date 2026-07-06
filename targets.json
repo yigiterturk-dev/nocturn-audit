@@ -1,0 +1,31 @@
+{
+  "$comment": "Canlı test SADECE owned:true olan hedeflere yapılır. Örnekler güvenlik için owned:false — kendi projelerinizde canlı prob istiyorsanız owned:true yapıp url ekleyin. stack alanı boş bırakılırsa package.json'dan otomatik keşfedilir.",
+  "projects": [
+    {
+      "name": "nocturn-audit",
+      "path": "~/Desktop/nocturn-audit",
+      "owned": false
+    },
+    {
+      "name": "emlakakli",
+      "path": "~/Desktop/Web Siteleri/emlakakli",
+      "url": "https://emlakakli.vercel.app",
+      "owned": false,
+      "stack": { "framework": "next", "db": "supabase", "auth": "clerk" }
+    },
+    {
+      "name": "rehberex",
+      "path": "~/Desktop/niye/rehberex",
+      "url": "https://rehberex.vercel.app",
+      "owned": false,
+      "stack": { "framework": "next" }
+    },
+    {
+      "name": "hukuk-ai",
+      "path": "~/Desktop/hukuk-ai",
+      "url": "https://lexordo.vercel.app",
+      "owned": false,
+      "stack": { "framework": "next", "db": "postgres" }
+    }
+  ]
+}

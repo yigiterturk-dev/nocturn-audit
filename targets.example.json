@@ -1,0 +1,12 @@
+{
+  "$comment": "targets.json şablonu. Kopyalayıp kendi projelerinizle doldurun. owned:true YALNIZCA sahibi olduğunuz, canlı test etme yetkiniz olan URL'ler için. stack boşsa otomatik keşfedilir.",
+  "projects": [
+    {
+      "name": "ornek-proje",
+      "path": "~/Desktop/ornek-proje",
+      "url": "https://ornek-proje.vercel.app",
+      "owned": false,
+      "stack": { "framework": "next", "db": "supabase", "auth": "clerk" }
+    }
+  ]
+}

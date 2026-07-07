@@ -70,7 +70,33 @@ A01 Broken Access Control · A02 Cryptographic Failures · A03 Injection ·
 A04 Insecure Design · A05 Security Misconfiguration · A06 Vulnerable Components (npm audit) ·
 A07 Auth Failures · A08 Data Integrity · A09 Logging · A10 SSRF.
 
-Kural listesi: `npx nocturn-audit rules` (şu an 32 kural).
+Kural listesi: `npx nocturn-audit rules` (şu an 36 kural).
+
+### Operasyonel / sağlık modülleri (yeni)
+
+Solo geliştiricinin ~44 projeyi otomatik gözetmesi için eklenen 4 modül. Kalibrasyon
+disiplini korunur: yalnızca gerçekten kesin olanlar `kesin`/yüksek, sezgiseller
+`olası`/düşük.
+
+- **A06 — Eski / deprecated bağımlılıklar** (`a06-outdated-deps`, deps): `a06-npm-audit`'i
+  TAMAMLAR (çakışmaz). Bilinen deprecated paketler (request, node-sass, tslint, moment …,
+  çevrimdışı → low/olası) ve `npm outdated --json` ile **≥ 2 major geride** kalan paketler
+  (medium/olası). 1 major gerisi gürültü sayılıp elenir. `node_modules` yoksa outdated adımı
+  atlanır (registry'ye gitmez).
+- **A05 — Canlı SSL / domain sağlığı** (`a05-live-ssl-domain`, live, owned-gated): TLS
+  sertifika **son kullanma** (< 7 gün veya süresi geçmiş = critical, < 30 gün = high — hepsi
+  `kesin`), DNS çözümlemesi (olası), HTTP→HTTPS yönlendirmesi (olası) ve yönlendirme zinciri
+  uzunluğu. Yıkıcı değil: tek TLS el sıkışması + birkaç HEAD/GET.
+- **A05 — Build / yapılandırma sağlığı** (`a05-build-config-health`, static): kodda kullanılan
+  ama `.env.example`/`.env*`'de tanımsız env değişkenleri ("env değişkeni kodda kullanılıyor ama
+  .env.example'da tanımsız"), TS `strict` kapalı (info), next/vite'ta `build` script yokluğu
+  (low) ve çözülemeyen relative import (best-effort, tavanlı, low). Hepsi düşük/olası;
+  `tsc`/build ÇALIŞTIRILMAZ.
+- **A05 — Canlı açıkta hassas dosya** (`a05-live-exposed-secrets`, live, owned-gated):
+  `a05-live-exposed-files`'ı (.env, .git) TAMAMLAR. `.env.local`/`.env.production`/`.env.bak`
+  (critical/kesin), DB dump/yedek `*.sql` (high), sır içeren `config.json` (high), açıkta
+  `.js.map` kaynak haritası (medium). SPA 200-catch-all'a karşı her hedefte içerik imzası
+  doğrulanır; iyi huylu public `config.json` elenir.
 
 ### Elite kurallar (yeni)
 

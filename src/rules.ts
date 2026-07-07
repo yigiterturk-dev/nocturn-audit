@@ -24,6 +24,7 @@ import { missingRateLimit } from "./static/missing-rate-limit.js";
 // A05 — Security Misconfiguration
 import { securityHeadersConfig } from "./static/security-headers-config.js";
 import { corsWildcard } from "./static/cors-wildcard.js";
+import { buildConfig } from "./static/build-config.js";
 // A07 — Identification & Authentication Failures
 import { jwtWeakVerification } from "./static/jwt-weak-verification.js";
 // A08 — Software & Data Integrity Failures
@@ -36,10 +37,13 @@ import { securityTxt } from "./static/security-txt.js";
 import { ssrf } from "./static/ssrf.js";
 // A06 — deps
 import { npmAudit } from "./deps/npm-audit.js";
+import { outdatedDeps } from "./deps/outdated-deps.js";
 // live
 import { liveSecurityHeaders } from "./live/security-headers.js";
 import { liveTransportSecurity } from "./live/transport-security.js";
 import { liveExposedFiles } from "./live/exposed-files.js";
+import { liveExposedSecrets } from "./live/exposed-secrets.js";
+import { liveSslDomain } from "./live/ssl-domain.js";
 import { liveOpenEndpoints } from "./live/open-endpoints.js";
 import { liveReflectedXss } from "./live/reflected-xss.js";
 import { liveUserEnumeration } from "./live/user-enumeration.js";
@@ -64,6 +68,7 @@ export const staticRules: Rule[] = [
   missingRateLimit,
   securityHeadersConfig,
   corsWildcard,
+  buildConfig,
   jwtWeakVerification,
   webhookSignature,
   externalScriptSri,
@@ -72,12 +77,14 @@ export const staticRules: Rule[] = [
   ssrf,
 ];
 
-export const depsRules: Rule[] = [npmAudit];
+export const depsRules: Rule[] = [npmAudit, outdatedDeps];
 
 export const liveRules: Rule[] = [
   liveSecurityHeaders,
   liveTransportSecurity,
   liveExposedFiles,
+  liveExposedSecrets,
+  liveSslDomain,
   liveOpenEndpoints,
   liveReflectedXss,
   liveUserEnumeration,

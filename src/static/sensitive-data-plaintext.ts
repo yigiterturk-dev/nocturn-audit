@@ -20,8 +20,14 @@ const PLAINTEXT_TYPE =
   /\b(text|varchar|char|citext|nvarchar|longtext|mediumtext|string)\b|\btext\s*\(|\bvarchar\s*\(|\bchar\s*\(/i;
 
 // Şifreleme/koruma göstergeleri → bu satır güvenli sayılır.
+// Not: `encrypt\w*` / `decrypt\w*`, `encryptToken(...)` / `decryptToken(...)` gibi
+// sarmalayıcı fonksiyon isimlerini de yakalar (\bencrypt\b bunları KAÇIRIYORDU).
 const ENCRYPTION_HINT =
-  /(bytea|pgp_sym_encrypt|pgp_pub_encrypt|pgcrypto|\bencrypt\b|encrypted|ciphertext|cipher|\bvault\b|EncryptedField|@Encrypted|@encrypted|crypto\.|createCipher|libsodium|sodium|kms|hashed|bcrypt|argon2|scrypt|\.hash\b)/i;
+  /(bytea|pgp_sym_encrypt|pgp_pub_encrypt|pgcrypto|encrypt\w*|decrypt\w*|encrypted|ciphertext|cipher|\bvault\b|EncryptedField|@Encrypted|@encrypted|crypto\.|createCipher|libsodium|sodium|kms|hashed|bcrypt|argon2|scrypt|\.hash\b)/i;
+
+// Değerin kendisi bir şifreleme/hash sarmalayıcısı mı (ör. encryptToken(x), hash(x)).
+const VALUE_IS_PROTECTED =
+  /\b(encrypt\w*|decrypt\w*|cipher\w*|hash\w*|bcrypt|argon2|scrypt|kms|seal\w*|vault)\s*\(/i;
 
 // Kod tarafı: DB'ye yazma çağrıları.
 const DB_MUTATION =
@@ -129,6 +135,8 @@ export const sensitiveDataPlaintext: StaticRule = {
             tm &&
             nearMutation &&
             !ENCRYPTION_HINT.test(raw) &&
+            // Değer bir şifreleme/hash sarmalayıcısıyla korunuyorsa düz metin DEĞİL.
+            !VALUE_IS_PROTECTED.test(tm[2]) &&
             !NOT_STORED_VALUE.test(tm[2])
           ) {
             const key = `${file}:${i}:token`;

@@ -33,15 +33,55 @@ const PROVIDER_PATTERNS: Pattern[] = [
   { name: "Private key block", re: /-----BEGIN (RSA |EC |OPENSSH |PGP )?PRIVATE KEY-----/, severity: "critical" },
 ];
 
+// Hassas isimli değişkene atanan bir SABİT STRING LİTERAL'i (tırnak ZORUNLU).
+// Tırnak zorunlu tutulduğu için `= decrypt(x)`, `= authHeader.slice(7)`,
+// `= data.token`, `= process.env.X`, `= req.headers.get(...)` gibi ifade/çağrı/
+// tanımlayıcı sağ-taraflar EŞLEŞMEZ — yalnızca gerçek gömülü literaller eşleşir.
 const SECRET_ASSIGN =
-  /\b(secret|api[_-]?key|apikey|password|passwd|token|private[_-]?key|client[_-]?secret|auth[_-]?token)\b\s*[:=]\s*["'`]?([^"'`\s]{16,})["'`]?/i;
+  /\b(secret|api[_-]?key|apikey|password|passwd|token|private[_-]?key|client[_-]?secret|auth[_-]?token)\b\s*[:=]\s*["'`]([^"'`\n]{18,})["'`]/i;
 
 const PLACEHOLDER =
   /(process\.env|import\.meta\.env|your[_-]?|xxx|placeholder|example|changeme|dummy|<[^>]+>|\$\{)/i;
 
+// Gerçek anahtar ön-ekleri (sağlayıcı biçimleri + JWT + PEM).
+const KEY_PREFIX = /^(sk[-_]|rk_|AKIA|AIza|gh[pousr]_|xox[baprs][-_]|eyJ|-----BEGIN)/;
+
+/**
+ * Bir string literal'in GERÇEK bir anahtar/parola biçiminde olup olmadığı.
+ * Yalnızca: sağlayıcı ön-eki | JWT | PEM | uzun opak token/parola (anahtar karakter
+ * seti + yüksek entropi + rakam VEYA karışık harf). Bu son koşul, `meta-app-secret-
+ * cok-gizli` gibi sözlük-benzeri dummy'leri (tümü küçük harf, rakam yok) eler.
+ */
+function looksLikeRealKey(value: string): boolean {
+  if (KEY_PREFIX.test(value)) return true;
+  if (value.length < 18) return false;
+  // Doğal dil / boşluk / cümle → gerçek sır değil.
+  if (!/^[A-Za-z0-9._~+/=-]+$/.test(value)) return false;
+  const hasDigit = /[0-9]/.test(value);
+  const mixedCase = /[a-z]/.test(value) && /[A-Z]/.test(value);
+  if (!hasDigit && !mixedCase) return false;
+  return shannon(value) >= 3.6;
+}
+
 // Gerçek .env (.example/.sample/.template hariç)
 const REAL_ENV_FILE = /(^|\/)\.env(\.[A-Za-z0-9_]+)?$/;
 const ENV_EXAMPLE = /\.(example|sample|template|dist)$/;
+
+// "Kod içinde gömülü sır" açısı için hariç tutulan dosyalar:
+//  - test/fixture/mock dosyaları (dummy/fixture sırlar)
+//  - dokümanlar (.md/.mdx/.txt/.rst — kod değil)
+//  - lock dosyaları (pnpm-lock/package-lock/yarn.lock, *-lock.*)
+const TEST_FILE =
+  /(^|\/)(__tests__|__mocks__)\/|(^|\/)(fixtures?|mocks?)\/|\.(test|spec)\.[cm]?[jt]sx?$/i;
+const DOC_FILE = /\.(md|mdx|txt|rst)$/i;
+const LOCK_FILE =
+  /(^|\/)(pnpm-lock\.yaml|package-lock\.json|yarn\.lock|bun\.lockb?)$|-lock\.[a-z0-9]+$/i;
+
+/** Kod-gömülü sır taraması için dosya hariç tutuluyor mu (test/doc/lock). */
+function isExcludedFile(file: string): boolean {
+  const f = file.replace(/\\/g, "/");
+  return TEST_FILE.test(f) || DOC_FILE.test(f) || LOCK_FILE.test(f);
+}
 
 function shannon(s: string): number {
   const freq: Record<string, number> = {};
@@ -99,6 +139,9 @@ export function scanGitDiff(diff: string): GitSecretHit[] {
     }
     // yalnızca eklenen satırlar (+ ile başlar, +++ değil)
     if (!line.startsWith("+") || line.startsWith("+++")) continue;
+    // Test/doc/lock dosyaları "kod-gömülü sır" değildir → atla (commit'lenmiş .env
+    // ayrımı yukarıda ayrıca yapılır ve bundan etkilenmez).
+    if (file && isExcludedFile(file)) continue;
     const added = line.slice(1);
 
     for (const p of PROVIDER_PATTERNS) {
@@ -120,7 +163,9 @@ export function scanGitDiff(diff: string): GitSecretHit[] {
     const sm = SECRET_ASSIGN.exec(added);
     if (sm && !PLACEHOLDER.test(added)) {
       const value = sm[2];
-      if (value.length >= 20 && shannon(value) >= 3.3) {
+      // Gerçek bir anahtar/parola BİÇİMİ olmalı (sağlayıcı ön-eki | JWT | PEM |
+      // uzun opak yüksek-entropili token). Hash/UUID/kimlik/sözlük-dummy elenir.
+      if (looksLikeRealKey(value)) {
         const key = `${commit}:${file}:entropy:${value.slice(0, 8)}`;
         if (!seen.has(key)) {
           seen.add(key);

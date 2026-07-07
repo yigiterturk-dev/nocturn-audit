@@ -412,6 +412,12 @@ describe("A02 — sensitive-data-plaintext", () => {
     });
     expect(f.some((x) => x.title.includes("Token/secret"))).toBe(true);
   });
+  it("encryptToken(...) sarmalayıcısı ile yazılıyor → Token/secret bulgusu ÜRETMEZ", async () => {
+    const f = await run(sensitiveDataPlaintext, {
+      "server.ts": `await prisma.account.create({ data: { access_token: encryptToken(pageToken), userId } }); // K2: at-rest AES-256-GCM`,
+    });
+    expect(f.some((x) => x.title.includes("Token/secret"))).toBe(false);
+  });
   it("bytea/pgp_sym_encrypt ile şifreli → temiz", async () => {
     const f = await run(sensitiveDataPlaintext, {
       "migrations/001.sql": `CREATE TABLE patients ( id serial, tc_kimlik bytea, ssn bytea default pgp_sym_encrypt('', '') );`,
@@ -590,6 +596,76 @@ describe("A02 — secrets-git-history (scanGitDiff)", () => {
     ].join("\n");
     const hits = scanGitDiff(diff);
     expect(hits.length).toBe(0);
+  });
+
+  // --- FP tightening (adintelligence dogfood): sağ-taraf LİTERAL değilse tetikleme
+  it("decrypt() çağrısı (iyi pratik) → yakalamaz (ifade, literal değil)", () => {
+    const diff = [
+      "commit 8de20ec44f",
+      "+++ b/server.ts",
+      "+  const token = decrypt(row.token); // K2: şifreli token çöz",
+    ].join("\n");
+    expect(scanGitDiff(diff).length).toBe(0);
+  });
+  it("Bearer başlığından slice(7) → yakalamaz (ifade)", () => {
+    const diff = [
+      "commit eab24aa880",
+      "+++ b/server.ts",
+      "+  const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : '';",
+    ].join("\n");
+    expect(scanGitDiff(diff).length).toBe(0);
+  });
+  it("data.token / member erişimi → yakalamaz (tanımlayıcı)", () => {
+    const diff = [
+      "commit eab24aa881",
+      "+++ b/server.ts",
+      "+  const token = data.someLongPropertyName;",
+    ].join("\n");
+    expect(scanGitDiff(diff).length).toBe(0);
+  });
+  it("test dosyasındaki dummy sır → yakalamaz", () => {
+    const diff = [
+      "commit 437f16b24b",
+      "+++ b/tests/metaSignedRequest.test.ts",
+      "+const SECRET = 'meta-app-secret-cok-gizli';",
+    ].join("\n");
+    expect(scanGitDiff(diff).length).toBe(0);
+  });
+  it("markdown dokümandaki eşleşme → yakalamaz", () => {
+    const diff = [
+      "commit 0783d87af7",
+      "+++ b/SAHIP_AKSIYONU.md",
+      "+2. Webhook (DM/inbox için): Callback URL `{BASE_URL}/webhook?token=abc123def456ghi789`",
+    ].join("\n");
+    expect(scanGitDiff(diff).length).toBe(0);
+  });
+  it("sözlük-benzeri dummy (rakam yok, tümü küçük harf) → yakalamaz", () => {
+    const diff = [
+      "commit deadbeef01",
+      "+++ b/src/config.ts",
+      "+const secret = 'meta-app-secret-cok-gizli-degerdir';",
+    ].join("\n");
+    expect(scanGitDiff(diff).length).toBe(0);
+  });
+
+  // --- Gerçek sır HÂLÂ yakalanmalı (regresyon koruması)
+  it("GERÇEK quoted parola literal'i (kod dosyası) → yakalar", () => {
+    const diff = [
+      "commit e2b0850650",
+      "+++ b/scripts/run-sql.mjs",
+      '+  password: "besmaf-8gyzwR3kd9Xa2buc",',
+    ].join("\n");
+    const hits = scanGitDiff(diff);
+    expect(hits.some((h) => h.name === "Yüksek-entropili sabit sır")).toBe(true);
+  });
+  it("GERÇEK gömülü sağlayıcı JWT literal'i → yakalar", () => {
+    const diff = [
+      "commit 85d2af79b4",
+      "+++ b/scripts/dump-schema.mjs",
+      '+  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIn0.abcDEF123ghiJKL456mnoPQR",',
+    ].join("\n");
+    const hits = scanGitDiff(diff);
+    expect(hits.some((h) => h.name === "JWT/service token")).toBe(true);
   });
 });
 

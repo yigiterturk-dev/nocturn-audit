@@ -1,5 +1,13 @@
 import type { Severity } from "./severity.js";
 
+/**
+ * Bulgu güven seviyesi (geriye-uyumlu ek alan):
+ *  - "kesin"  → deterministik/doğrulanmış bulgu (ör. commit'lenmiş .env, düz-metin hassas kolon).
+ *  - "olası"  → sezgisel/paternsel bulgu, elle doğrulama gerektirir (ör. olası SQLi/SSRF).
+ * Eski tüketiciler alanı yok sayar.
+ */
+export type Confidence = "kesin" | "olası";
+
 /** OWASP Top 10 2021 kategorileri. */
 export type OwaspCategory =
   | "A01:2021-Broken Access Control"
@@ -46,6 +54,12 @@ export interface Finding {
    * Uygulanabilir olduğunda kısa düzeltme kod örneği. Geriye-uyumlu, opsiyonel ek alan.
    */
   remediationCode?: string;
+  /**
+   * Bulgunun güven seviyesi. Geriye-uyumlu, opsiyonel ek alan.
+   * Belirtilmezse kuralın varsayılan `confidence` değeri, o da yoksa "olası" atanır (engine).
+   * Eski tüketiciler yok sayar.
+   */
+  confidence?: Confidence;
 }
 
 export function fileEvidence(

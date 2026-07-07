@@ -68,6 +68,8 @@ export const sensitiveDataPlaintext: StaticRule = {
   severity: "high",
   cwe: "CWE-311",
   kind: "static",
+  // Şemada düz-metin hassas kolon → deterministik.
+  confidence: "kesin",
   run(ctx: StaticContext): Finding[] {
     const findings: Finding[] = [];
     const seen = new Set<string>();

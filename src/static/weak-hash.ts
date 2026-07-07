@@ -19,6 +19,8 @@ export const weakHash: StaticRule = {
   owasp: "A02:2021-Cryptographic Failures",
   severity: "high",
   kind: "static",
+  // Zayıf hash (md5/sha1) parola/token için → deterministik.
+  confidence: "kesin",
   run(ctx): Finding[] {
     const findings: Finding[] = [];
 

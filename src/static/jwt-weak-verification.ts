@@ -24,6 +24,8 @@ export const jwtWeakVerification: StaticRule = {
   owasp: "A07:2021-Identification & Authentication Failures",
   severity: "high",
   kind: "static",
+  // alg:none / decode-only yetkilendirme → deterministik.
+  confidence: "kesin",
   run(ctx): Finding[] {
     const findings: Finding[] = [];
     for (const file of ctx.files) {

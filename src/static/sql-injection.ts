@@ -24,8 +24,10 @@ export const sqlInjection: StaticRule = {
   id: "a03-sql-injection",
   title: "Olası SQL enjeksiyonu (string ile sorgu oluşturma)",
   owasp: "A03:2021-Injection",
-  severity: "critical",
+  severity: "high",
   kind: "static",
+  // Paternsel tespit; elle doğrulama gerekir.
+  confidence: "olası",
   run(ctx): Finding[] {
     const findings: Finding[] = [];
     for (const file of ctx.files) {
@@ -53,7 +55,9 @@ export const sqlInjection: StaticRule = {
           ruleId: this.id,
           title: this.title,
           owasp: this.owasp,
-          severity: inputNear ? "critical" : "high",
+          // Sezgisel kural: yalnızca kullanıcı girdisi sorguya aktığında (kanıt
+          // güçlendiğinde) yüksek; aksi halde orta seviyede tut.
+          severity: inputNear ? "high" : "medium",
           description: inputNear
             ? "SQL sorgusu string/template ile oluşturuluyor ve yakında kullanıcı girdisi (req/params/body/query) var. Parametreleştirme yoksa doğrudan SQL enjeksiyonu mümkün."
             : "SQL sorgusu string birleştirme/template ile oluşturuluyor. Değişken interpolasyonu enjeksiyon riski taşır; parametreli sorgu kullanılmalı.",

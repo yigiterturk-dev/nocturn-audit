@@ -38,17 +38,37 @@ async function run(
 }
 
 describe("A01 — api-route-auth-missing", () => {
-  it("auth kontrolü olmayan route'ta bulgu üretir", async () => {
+  it("auth'suz DB YAZAN (mutation) route → high olası", async () => {
+    const f = await run(apiRouteAuthMissing, {
+      "app/api/orders/route.ts": `export async function POST(req){ const b = await req.json(); await db.orders.create({ data: b }); return Response.json({ok:true}); }`,
+    });
+    expect(f.length).toBe(1);
+    expect(f[0].severity).toBe("high");
+    expect(f[0].confidence).toBe("olası");
+  });
+  it("auth'suz DB OKUYAN (GET) route → medium (public veri olabilir)", async () => {
     const f = await run(apiRouteAuthMissing, {
       "app/api/orders/route.ts": `export async function GET(req){ const data = await db.orders.findMany(); return Response.json(data); }`,
     });
     expect(f.length).toBe(1);
-    expect(f[0].severity).toBe("high");
+    expect(f[0].severity).toBe("medium");
+  });
+  it("DB'ye dokunmayan public route (og görsel) → bulgu yok", async () => {
+    const f = await run(apiRouteAuthMissing, {
+      "app/api/og/route.tsx": `import { ImageResponse } from "next/og"; export async function GET(req){ return new ImageResponse(<div>hi</div>); }`,
+    });
+    expect(f.length).toBe(0);
+  });
+  it("imza doğrulamalı webhook → bulgu yok", async () => {
+    const f = await run(apiRouteAuthMissing, {
+      "app/api/webhook/route.ts": `export async function POST(req){ const sig = req.headers.get("stripe-signature"); const event = stripe.webhooks.constructEvent(body, sig, secret); await db.order.update({}); return Response.json({ok:true}); }`,
+    });
+    expect(f.length).toBe(0);
   });
   it("auth içeren route'ta bulgu üretmez", async () => {
     const f = await run(apiRouteAuthMissing, {
       "app/api/orders/route.ts": `import { auth } from "@clerk/nextjs";
-export async function GET(req){ const { userId } = auth(); if(!userId) return new Response("no",{status:401}); return Response.json([]); }`,
+export async function GET(req){ const { userId } = auth(); if(!userId) return new Response("no",{status:401}); return await db.orders.findMany(); }`,
     });
     expect(f.length).toBe(0);
   });
@@ -92,11 +112,13 @@ describe("A01 — supabase-service-role", () => {
 });
 
 describe("A02 — hardcoded-secrets", () => {
-  it("Stripe live key'i critical yakalar", async () => {
+  it("Stripe live key'i critical + kesin yakalar", async () => {
     const f = await run(hardcodedSecrets, {
       "lib/pay.ts": `const key = "sk_***MASKED***";`,
     });
     expect(f.some((x) => x.severity === "critical")).toBe(true);
+    // engine confidence'ı stamp'liyor; kural varsayılanı kesin
+    expect(hardcodedSecrets.confidence).toBe("kesin");
   });
   it("process.env kullanımında bulgu üretmez", async () => {
     const f = await run(hardcodedSecrets, {
@@ -104,18 +126,54 @@ describe("A02 — hardcoded-secrets", () => {
     });
     expect(f.length).toBe(0);
   });
+  it("gitignore'lanmış .env.local'daki sır → kod-gömülü olarak RAPORLANMAZ", async () => {
+    const f = await run(
+      hardcodedSecrets,
+      { ".env.local": `STRIPE_SECRET_KEY=sk_***MASKED***` },
+      { tracked: [] }, // izlenmiyor (gitignore'lanmış)
+    );
+    expect(f.length).toBe(0);
+  });
+  it("git'e izlenen (commit'lenmiş) .env'deki sır → kod-gömülü olarak yakalanır", async () => {
+    const f = await run(
+      hardcodedSecrets,
+      { ".env": `STRIPE_SECRET_KEY=sk_***MASKED***` },
+      { tracked: [".env"] },
+    );
+    expect(f.some((x) => x.severity === "critical")).toBe(true);
+  });
 });
 
 describe("A02 — env-committed", () => {
-  it("gerçek değerli .env + gitignore yok → bulgu", async () => {
-    const f = await run(envCommitted, {
-      ".env": `DATABASE_URL=postgres://user:realpassword@host:5432/db\nSTRIPE_KEY=sk_***MASKED***`,
-      "package.json": `{"name":"x"}`,
-      ".gitignore": `node_modules/`,
-    });
-    expect(f.some((x) => x.severity === "high")).toBe(true);
+  it("git'e izlenen (commit'lenmiş) .env → high kesin", async () => {
+    const f = await run(
+      envCommitted,
+      {
+        ".env": `DATABASE_URL=postgres://user:realpassword@host:5432/db\nSTRIPE_KEY=sk_***MASKED***`,
+        "package.json": `{"name":"x"}`,
+        ".gitignore": `node_modules/`,
+      },
+      { tracked: [".env", "package.json", ".gitignore"] },
+    );
+    const high = f.find((x) => x.severity === "high");
+    expect(high).toBeTruthy();
+    expect(high!.title).toContain("git'e commit edilmiş");
+    expect(high!.confidence).toBe("kesin");
   });
-  it(".gitignore .env içeriyorsa high üretmez", async () => {
+  it("gitignore'lanmış (izlenmeyen) .env.local → high ÜRETMEZ (info)", async () => {
+    const f = await run(
+      envCommitted,
+      {
+        ".env.local": `DATABASE_URL=postgres://user:realpassword@host:5432/db`,
+        "package.json": `{"name":"x"}`,
+        ".gitignore": `node_modules/\n.env*`,
+      },
+      { tracked: ["package.json", ".gitignore"] },
+    );
+    expect(f.filter((x) => x.severity === "high").length).toBe(0);
+    expect(f.some((x) => x.severity === "info")).toBe(true);
+  });
+  it(".gitignore .env içeriyorsa ve dosya yoksa high üretmez", async () => {
     const f = await run(envCommitted, {
       "package.json": `{"name":"x"}`,
       ".gitignore": `node_modules/\n.env*`,
@@ -182,6 +240,29 @@ describe("A03 — dangerous-eval", () => {
       "components/Post.tsx": `export default function P({text}){ return <div>{text}</div>; }`,
     });
     expect(f.length).toBe(0);
+  });
+  it("dangerouslySetInnerHTML → kesin", async () => {
+    const f = await run(dangerousEval, {
+      "components/Post.tsx": `export default function P({html}){ return <div dangerouslySetInnerHTML={{__html: html}} />; }`,
+    });
+    expect(f[0].confidence).toBe("kesin");
+    expect(f[0].severity).toBe("high");
+  });
+  it("child_process sabit/araç kullanımı → low olası (HIGH değil)", async () => {
+    const f = await run(dangerousEval, {
+      "scripts/build.ts": `import { execSync } from "child_process"; execSync("tsc -p tsconfig.json");`,
+    });
+    expect(f.length).toBeGreaterThanOrEqual(1);
+    const cp = f.find((x) => x.title.includes("child_process"));
+    expect(cp!.severity).toBe("low");
+    expect(cp!.confidence).toBe("olası");
+  });
+  it("child_process kullanıcı girdisiyle → high", async () => {
+    const f = await run(dangerousEval, {
+      "app/api/run/route.ts": `import { exec } from "child_process"; export async function POST(req){ const { cmd } = await req.json(); exec(\`convert \${cmd}\`); }`,
+    });
+    const cp = f.find((x) => x.title.includes("child_process"));
+    expect(cp!.severity).toBe("high");
   });
 });
 

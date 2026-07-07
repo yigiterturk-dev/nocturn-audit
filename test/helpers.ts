@@ -17,12 +17,27 @@ const DEFAULT_STACK: Stack = {
  */
 export function makeCtx(
   files: Record<string, string>,
-  overrides?: { project?: Partial<Project>; stack?: Partial<Stack> },
+  overrides?: {
+    project?: Partial<Project>;
+    stack?: Partial<Stack>;
+    /** git ls-files tarafından izlenen dosyalar. Verilmezse tüm dosyalar izleniyor sayılır. */
+    tracked?: string[];
+    /** Proje git deposu mu (varsayılan true). */
+    isGitRepo?: boolean;
+  },
 ): StaticContext {
   const list = Object.keys(files);
   const read = (p: string): string | null =>
     p in files ? files[p] : null;
   const exists = (p: string): boolean => p in files;
+
+  const isGitRepo = overrides?.isGitRepo ?? true;
+  const trackedSet =
+    overrides?.tracked !== undefined
+      ? new Set(overrides.tracked.map((f) => f.replace(/\\/g, "/")))
+      : new Set(list.map((f) => f.replace(/\\/g, "/")));
+  const isTracked = (p: string): boolean =>
+    isGitRepo && trackedSet.has(p.replace(/\\/g, "/"));
 
   const grep = (
     regex: RegExp,
@@ -54,5 +69,14 @@ export function makeCtx(
     stack: { ...DEFAULT_STACK, ...overrides?.stack },
   };
 
-  return { project, root: "/fixture", files: list, read, grep, exists };
+  return {
+    project,
+    root: "/fixture",
+    files: list,
+    read,
+    grep,
+    exists,
+    isTracked,
+    isGitRepo,
+  };
 }

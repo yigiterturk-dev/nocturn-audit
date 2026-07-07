@@ -9,7 +9,7 @@ import type { StaticRule } from "../core/rule.js";
 
 export const envCommitted: StaticRule = {
   id: "a02-env-file-committed",
-  title: ".env dosyası .gitignore'da değil / depoya sızmış olabilir",
+  title: ".env dosyası git'e commit edilmiş",
   owasp: "A02:2021-Cryptographic Failures",
   severity: "high",
   kind: "static",
@@ -32,27 +32,47 @@ export const envCommitted: StaticRule = {
       const content = ctx.read(file) ?? "";
       const hasRealValue = /^[A-Z0-9_]+\s*=\s*[^\s#][^\n]{6,}/m.test(content);
       if (!hasRealValue) continue;
-      findings.push({
-        ruleId: this.id,
-        title: `Gerçek değer içeren ${base} dosyası depoda`,
-        owasp: this.owasp,
-        severity: ignoresEnv ? "medium" : "high",
-        description: ignoresEnv
-          ? `${base} dosyası kaynak ağacında bulunuyor. .gitignore .env kalıbı içeriyor gibi görünse de dosya yine de mevcut; geçmişte commit edilmiş olabilir.`
-          : `${base} gerçek görünümlü değerler içeriyor ve .gitignore'da .env kalıbı yok. Sırlar git geçmişine sızmış olabilir.`,
-        evidence: [fileEvidence(file, 1, "(.env içeriği redakte edildi)")],
-        remediation:
-          ".env* dosyalarını .gitignore'a ekleyin; git geçmişinden temizleyin (git filter-repo/BFG); açığa çıkmış tüm sırları iptal edip yenileyin.",
-      });
+
+      const tracked = ctx.isTracked(file);
+      if (tracked) {
+        // GERÇEK sızıntı: dosya git tarafından izleniyor → depoya girmiş.
+        findings.push({
+          ruleId: this.id,
+          title: `${base} dosyası git'e commit edilmiş`,
+          owasp: this.owasp,
+          severity: "high",
+          confidence: "kesin",
+          description: `${base} gerçek görünümlü değerler içeriyor ve git tarafından izleniyor (commit edilmiş). Depoyu klonlayan herkes bu sırlara erişir — açık bir sır sızıntısıdır.`,
+          evidence: [fileEvidence(file, 1, "(.env içeriği redakte edildi)")],
+          remediation:
+            "Dosyayı takipten çıkarın (git rm --cached), .gitignore'a `.env*` ekleyin, git geçmişinden temizleyin (git filter-repo/BFG) ve açığa çıkan tüm sırları iptal edip yenileyin.",
+        });
+      } else if (ctx.isGitRepo) {
+        // Dosya diskte var ama git izlemiyor (gitignore'lanmış): sırların DOĞRU yeri.
+        // Kod-içi/commit sızıntısı değildir → yalnızca bilgi amaçlı düşük not.
+        findings.push({
+          ruleId: this.id,
+          title: `${base} yerelde mevcut (git izlemiyor)`,
+          owasp: this.owasp,
+          severity: "info",
+          confidence: "kesin",
+          description: `${base} kaynak ağacında var ancak git tarafından izlenmiyor (gitignore'lanmış). Bu, ortam sırlarının doğru saklandığı beklenen durumdur; bir sızıntı değildir. Yine de dosyayı asla commit'lemeyin.`,
+          evidence: [fileEvidence(file, 1, "(gitignore'lanmış .env — sızıntı yok)")],
+          remediation:
+            "Aksiyon gerekmez. Dosyanın `.gitignore` kapsamında kaldığından emin olun.",
+        });
+      }
+      // git deposu değilse: izleme bilgisi yok → sessiz geç (FP üretme).
     }
 
-    // hiç .gitignore yoksa ya da .env kalıbı yoksa bilgi ver
+    // hiç .gitignore yoksa ya da .env kalıbı yoksa ileriye dönük düşük uyarı
     if (!ignoresEnv && ctx.exists("package.json")) {
       findings.push({
         ruleId: this.id,
         title: ".gitignore .env kalıbı içermiyor",
         owasp: this.owasp,
         severity: "low",
+        confidence: "olası",
         description:
           ".gitignore dosyası .env* için bir kural içermiyor. İleride yanlışlıkla sır commit'lenmesini önlemek için eklenmeli.",
         evidence: [fileEvidence(".gitignore", 1, gitignore ? "(.env kalıbı yok)" : "(.gitignore yok)")],

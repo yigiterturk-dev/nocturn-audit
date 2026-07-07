@@ -76,6 +76,8 @@ export const missingRls: StaticRule = {
   severity: "high",
   cwe: "CWE-284",
   kind: "static",
+  // SQL şemasında RLS'siz public tablo → deterministik (SQL parse).
+  confidence: "kesin",
   run(ctx: StaticContext): Finding[] {
     const sqlFiles = ctx.files.filter((f) =>
       /\.sql$/i.test(f.replace(/\\/g, "/")),

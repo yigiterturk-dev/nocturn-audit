@@ -20,8 +20,10 @@ export const ssrf: StaticRule = {
   id: "a10-ssrf-user-controlled-request",
   title: "Olası SSRF: kullanıcı kontrollü sunucu isteği",
   owasp: "A10:2021-Server-Side Request Forgery",
-  severity: "high",
+  severity: "medium",
   kind: "static",
+  // Paternsel tespit (girdinin gerçekten dış URL'e aktığı elle doğrulanmalı).
+  confidence: "olası",
   run(ctx): Finding[] {
     const findings: Finding[] = [];
     for (const file of ctx.files) {
@@ -45,7 +47,7 @@ export const ssrf: StaticRule = {
           ruleId: this.id,
           title: this.title,
           owasp: this.owasp,
-          severity: "high",
+          severity: "medium",
           description:
             "Sunucu tarafında kullanıcı girdisinden türeyen bir URL'e istek yapılıyor ve host allowlist/doğrulama izi yok. Saldırgan iç servislere (169.254.169.254, localhost, iç ağ) istek yaptırabilir (SSRF).",
           evidence: [fileEvidence(file, i + 1, raw)],

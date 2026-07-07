@@ -44,10 +44,19 @@ const shannon = (s: string): number => {
   return h;
 };
 
+// Gerçek env dosyası (.env, .env.local, .env.production …) — .example/.sample/.template hariç.
+const ENV_FILE = /(^|\/)\.env(\.[\w.-]+)?$/;
+const ENV_EXAMPLE = /\.(example|sample|template|dist)$/;
+
+const isEnvFile = (file: string): boolean => {
+  const f = file.replace(/\\/g, "/");
+  return ENV_FILE.test(f) && !ENV_EXAMPLE.test(f);
+};
+
 const skipFile = (file: string): boolean => {
   const f = file.replace(/\\/g, "/");
   return (
-    /\.env(\.example|\.sample|\.template)?$/.test(f) ||
+    /\.env(\.example|\.sample|\.template)$/.test(f) ||
     /(test|spec|__tests__|fixtures?)/.test(f) ||
     /\.lock$|package-lock/.test(f)
   );
@@ -59,12 +68,18 @@ export const hardcodedSecrets: StaticRule = {
   owasp: "A02:2021-Cryptographic Failures",
   severity: "critical",
   kind: "static",
+  // Kaynak kodda / git'e commit'lenmiş dosyada sabit sır → deterministik bulgu.
+  confidence: "kesin",
   run(ctx): Finding[] {
     const findings: Finding[] = [];
     const seen = new Set<string>();
 
     for (const file of ctx.files) {
       if (skipFile(file)) continue;
+      // `.env*` dosyaları sırların DOĞRU yeridir. Sadece dosya gerçekten git'e
+      // izlenmişse (commit'lenmiş) bir sızıntıdır; gitignore'lanmış `.env.local`
+      // kod-içi gömülü sır DEĞİLDİR (bkz. a02-env-file-committed kuralı).
+      if (isEnvFile(file) && !ctx.isTracked(file)) continue;
       const content = ctx.read(file);
       if (!content) continue;
       const lines = content.split(/\r?\n/);

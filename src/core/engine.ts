@@ -1,4 +1,5 @@
 import { readFileSync, existsSync } from "node:fs";
+import { execFileSync } from "node:child_process";
 import { join, relative, sep } from "node:path";
 import fg from "fast-glob";
 import type { Finding } from "./finding.js";
@@ -21,6 +22,13 @@ export interface ProjectReport {
   project: Project;
   findings: Finding[];
   counts: SeverityCounts;
+  /**
+   * Güven seviyesine göre bölünmüş severity sayımları (geriye-uyumlu ek alan).
+   * `certain` = kesin bulgular, `heuristic` = olası (sezgisel) bulgular.
+   * Toplamları `counts` ile birebir örtüşür.
+   */
+  certainCounts: SeverityCounts;
+  heuristicCounts: SeverityCounts;
   score: number;
   /** Çalıştırılan kural kimlikleri. */
   rulesRun: string[];
@@ -79,10 +87,34 @@ export async function collectFiles(root: string): Promise<string[]> {
   return files.map((f) => f.split("/").join(sep));
 }
 
+/**
+ * git ls-files ile izlenen dosyaların posix-normalize edilmiş kümesini döner.
+ * Git deposu değilse `null` döner (izleme bilgisi yok).
+ */
+export function collectTrackedFiles(root: string): Set<string> | null {
+  try {
+    const out = execFileSync("git", ["ls-files", "-z"], {
+      cwd: root,
+      timeout: 15_000,
+      maxBuffer: 64 * 1024 * 1024,
+      stdio: ["ignore", "pipe", "ignore"],
+    }).toString("utf8");
+    const set = new Set<string>();
+    for (const f of out.split("\0")) {
+      const p = f.trim();
+      if (p) set.add(p);
+    }
+    return set;
+  } catch {
+    return null;
+  }
+}
+
 function buildStaticContext(
   project: Project,
   root: string,
   files: string[],
+  tracked: Set<string> | null,
 ): StaticContext {
   const cache = new Map<string, string | null>();
   const read = (relPath: string): string | null => {
@@ -130,7 +162,21 @@ function buildStaticContext(
     return matches;
   };
 
-  return { project, root, files, read, grep, exists };
+  const isTracked = (relPath: string): boolean => {
+    if (!tracked) return false;
+    return tracked.has(relPath.replace(/\\/g, "/"));
+  };
+
+  return {
+    project,
+    root,
+    files,
+    read,
+    grep,
+    exists,
+    isTracked,
+    isGitRepo: tracked !== null,
+  };
 }
 
 function buildLiveContext(project: Project): LiveContext {
@@ -210,6 +256,20 @@ function tallyCounts(findings: Finding[]): SeverityCounts {
   return counts;
 }
 
+/** Bulguları güven seviyesine göre ikiye ayırıp severity sayımlarını üretir. */
+function tallyByConfidence(findings: Finding[]): {
+  certain: SeverityCounts;
+  heuristic: SeverityCounts;
+} {
+  const certain = emptyCounts();
+  const heuristic = emptyCounts();
+  for (const f of findings) {
+    if (f.confidence === "kesin") certain[f.severity]++;
+    else heuristic[f.severity]++;
+  }
+  return { certain, heuristic };
+}
+
 /**
  * Tek projeyi tara. Kuralları kind'a göre uygun bağlamla çalıştırır.
  * Canlı kurallar YALNIZCA owned:true + url varsa çalışır.
@@ -242,11 +302,18 @@ export async function scanProject(
 
   // --- Statik kurallar
   if (runStatic && existsSync(root)) {
-    const ctx = buildStaticContext(project, root, files);
+    const tracked = collectTrackedFiles(root);
+    const ctx = buildStaticContext(project, root, files, tracked);
     for (const rule of rules) {
       if (rule.kind !== "static") continue;
       try {
         const out = await rule.run(ctx);
+        // Güven seviyesi: bulgu belirtmemişse kural varsayılanı, o da yoksa "olası".
+        for (const f of out) {
+          if (f.confidence === undefined) {
+            f.confidence = rule.confidence ?? "olası";
+          }
+        }
         findings.push(...out);
         rulesRun.push(rule.id);
       } catch (err) {
@@ -270,6 +337,9 @@ export async function scanProject(
       if (rule.kind !== "deps") continue;
       try {
         const out = await rule.run(depsCtx);
+        for (const f of out) {
+          if (f.confidence === undefined) f.confidence = rule.confidence ?? "olası";
+        }
         findings.push(...out);
         rulesRun.push(rule.id);
       } catch (err) {
@@ -296,6 +366,9 @@ export async function scanProject(
         if (rule.kind !== "live") continue;
         try {
           const out = await rule.run(ctx);
+          for (const f of out) {
+            if (f.confidence === undefined) f.confidence = rule.confidence ?? "olası";
+          }
           findings.push(...out);
           rulesRun.push(rule.id);
         } catch (err) {
@@ -310,10 +383,13 @@ export async function scanProject(
   }
 
   const counts = tallyCounts(findings);
+  const { certain, heuristic } = tallyByConfidence(findings);
   return {
     project,
     findings,
     counts,
+    certainCounts: certain,
+    heuristicCounts: heuristic,
     score: riskScore(counts),
     rulesRun,
     notes,

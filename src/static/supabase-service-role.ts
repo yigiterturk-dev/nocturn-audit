@@ -37,7 +37,10 @@ export const supabaseServiceRole: StaticRule = {
         ruleId: this.id,
         title: this.title,
         owasp: this.owasp,
-        severity: clientSide ? "critical" : "high",
+        // Client bundle'ında service_role → kesin/kritik. Sunucu tarafı kullanım
+        // çoğu zaman tasarım gereğidir → sezgisel (olası) + orta seviye.
+        severity: clientSide ? "critical" : "medium",
+        confidence: clientSide ? "kesin" : "olası",
         description: clientSide
           ? "service_role anahtarı client tarafı (use client / .tsx) bir dosyada geçiyor. Bu anahtar RLS'i tamamen atlar ve tarayıcıya sızarsa tüm veriye tam erişim demektir."
           : "service_role anahtarı sunucu kodunda kullanılıyor. RLS'i atladığı için yalnızca gerçekten gerekli, katı yetki kontrollü uçlarda kullanılmalı; yanlışlıkla client'a taşınmadığından emin olun.",

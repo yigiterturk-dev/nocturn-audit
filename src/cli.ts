@@ -106,7 +106,7 @@ program
       reports.push(report);
       console.log(
         pc.dim(
-          `${report.findings.length} bulgu (${report.counts.critical}C/${report.counts.high}H)`,
+          `${report.findings.length} bulgu (${report.counts.critical}C/${report.counts.high}H · kesin ${report.certainCounts.critical}C/${report.certainCounts.high}H)`,
         ),
       );
     }
@@ -182,8 +182,13 @@ program
               ? pc.magenta("live  ")
               : pc.green("deps  ");
         const cwe = r.cwe ? pc.dim(` [${r.cwe}]`) : "";
+        // Kural varsayılan güven seviyesi (bulgular bunu override edebilir).
+        const conf =
+          r.confidence === "kesin"
+            ? pc.red("kesin")
+            : pc.dim("olası");
         console.log(
-          `    ${kind} ${pc.dim(r.id.padEnd(38))} ${r.title}${cwe}`,
+          `    ${kind} ${conf} ${pc.dim(r.id.padEnd(34))} ${r.title}${cwe}`,
         );
       }
     }

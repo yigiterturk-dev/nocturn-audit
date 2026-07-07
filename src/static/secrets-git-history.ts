@@ -145,6 +145,8 @@ export const secretsGitHistory: StaticRule = {
   severity: "high",
   cwe: "CWE-540",
   kind: "static",
+  // Git geçmişinde fiilen bulunan sır → deterministik.
+  confidence: "kesin",
   async run(ctx: StaticContext): Promise<Finding[]> {
     // Git deposu değilse sessizce atla.
     try {

@@ -20,6 +20,8 @@ export const nextPublicSecret: StaticRule = {
   owasp: "A02:2021-Cryptographic Failures",
   severity: "critical",
   kind: "static",
+  // NEXT_PUBLIC_ altında server-only sır → deterministik.
+  confidence: "kesin",
   run(ctx): Finding[] {
     const findings: Finding[] = [];
     const seen = new Set<string>();

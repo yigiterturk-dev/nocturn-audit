@@ -1,4 +1,4 @@
-import type { Finding, OwaspCategory } from "./finding.js";
+import type { Confidence, Finding, OwaspCategory } from "./finding.js";
 import type { Severity } from "./severity.js";
 
 /** Projenin registry.json'daki (targets.json) kaydı. */
@@ -43,6 +43,14 @@ export interface StaticContext {
   grep(regex: RegExp, include?: (file: string) => boolean): GrepMatch[];
   /** Belirli bir dosya var mı. */
   exists(relPath: string): boolean;
+  /**
+   * Dosya git tarafından izleniyor mu (git ls-files).
+   * Git deposu değilse ya da dosya izlenmiyorsa false döner.
+   * Sır/`.env` kurallarının "gerçekten commit'lenmiş mi" ayrımı için kullanılır.
+   */
+  isTracked(relPath: string): boolean;
+  /** Proje bir git çalışma ağacı mı (isTracked'in anlamlı olup olmadığını bilmek için). */
+  isGitRepo: boolean;
 }
 
 /** Canlı prob sonucu (kanıt üretmek için). */
@@ -94,6 +102,11 @@ interface BaseRule {
   description?: string;
   /** İlgili CWE kimliği (ör. "CWE-311"). Geriye-uyumlu, opsiyonel ek alan. */
   cwe?: string;
+  /**
+   * Kuralın varsayılan güven seviyesi. Bir bulgu kendi `confidence` değerini
+   * belirtmezse engine bunu (o da yoksa "olası") atar. Geriye-uyumlu, opsiyonel.
+   */
+  confidence?: Confidence;
 }
 
 export interface StaticRule extends BaseRule {

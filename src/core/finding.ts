@@ -37,6 +37,15 @@ export interface Finding {
   evidence: Evidence[];
   /** Düzeltme önerisi. */
   remediation: string;
+  /**
+   * İlgili CWE kimliği (ör. "CWE-311"). Geriye-uyumlu, opsiyonel ek alan.
+   * Eski tüketiciler yok sayar.
+   */
+  cwe?: string;
+  /**
+   * Uygulanabilir olduğunda kısa düzeltme kod örneği. Geriye-uyumlu, opsiyonel ek alan.
+   */
+  remediationCode?: string;
 }
 
 export function fileEvidence(

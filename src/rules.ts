@@ -4,11 +4,18 @@ import type { Rule } from "./core/rule.js";
 import { apiRouteAuthMissing } from "./static/api-route-auth-missing.js";
 import { idorDirectObject } from "./static/idor-direct-object.js";
 import { supabaseServiceRole } from "./static/supabase-service-role.js";
+import { missingRls } from "./static/missing-rls.js";
+import { openRedirect } from "./static/open-redirect.js";
+import { csrfMissing } from "./static/csrf-missing.js";
+import { massAssignment } from "./static/mass-assignment.js";
 // A02 — Cryptographic Failures
 import { hardcodedSecrets } from "./static/hardcoded-secrets.js";
 import { envCommitted } from "./static/env-committed.js";
 import { nextPublicSecret } from "./static/next-public-secret.js";
 import { weakHash } from "./static/weak-hash.js";
+import { sensitiveDataPlaintext } from "./static/sensitive-data-plaintext.js";
+import { secretsGitHistory } from "./static/secrets-git-history.js";
+import { kvkkSpecialCategory } from "./static/kvkk-special-category.js";
 // A03 — Injection
 import { sqlInjection } from "./static/sql-injection.js";
 import { dangerousEval } from "./static/dangerous-eval.js";
@@ -21,8 +28,10 @@ import { corsWildcard } from "./static/cors-wildcard.js";
 import { jwtWeakVerification } from "./static/jwt-weak-verification.js";
 // A08 — Software & Data Integrity Failures
 import { webhookSignature } from "./static/webhook-signature.js";
+import { externalScriptSri } from "./static/external-script-sri.js";
 // A09 — Security Logging & Monitoring Failures
 import { auditLogging } from "./static/audit-logging.js";
+import { securityTxt } from "./static/security-txt.js";
 // A10 — SSRF
 import { ssrf } from "./static/ssrf.js";
 // A06 — deps
@@ -39,10 +48,17 @@ export const staticRules: Rule[] = [
   apiRouteAuthMissing,
   idorDirectObject,
   supabaseServiceRole,
+  missingRls,
+  openRedirect,
+  csrfMissing,
+  massAssignment,
   hardcodedSecrets,
   envCommitted,
   nextPublicSecret,
   weakHash,
+  sensitiveDataPlaintext,
+  secretsGitHistory,
+  kvkkSpecialCategory,
   sqlInjection,
   dangerousEval,
   missingRateLimit,
@@ -50,7 +66,9 @@ export const staticRules: Rule[] = [
   corsWildcard,
   jwtWeakVerification,
   webhookSignature,
+  externalScriptSri,
   auditLogging,
+  securityTxt,
   ssrf,
 ];
 

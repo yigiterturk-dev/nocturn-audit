@@ -13,6 +13,10 @@ const ALG_NONE = /alg\s*[:=]\s*["']none["']|algorithm[s]?\s*[:=][^\n]*["']none["
 const DECODE_ONLY = /jwt\.decode\s*\(|jwtDecode\s*\(|decodeJwt\s*\(/;
 const VERIFY = /jwt\.verify\s*\(|jose|jwtVerify/;
 const IGNORE_EXP = /ignoreExpiration\s*:\s*true/;
+// Algoritma karışıklığı: aynı algorithms listesinde hem simetrik (HS*) hem asimetrik (RS/ES/PS*).
+// Saldırgan public key'i HMAC secret'ı olarak kullanıp token sahteleyebilir.
+const ALG_CONFUSION =
+  /algorithms?\s*[:=]\s*\[[^\]]*\bHS\d{3}\b[^\]]*\b(?:RS|ES|PS)\d{3}\b|algorithms?\s*[:=]\s*\[[^\]]*\b(?:RS|ES|PS)\d{3}\b[^\]]*\bHS\d{3}\b/i;
 
 export const jwtWeakVerification: StaticRule = {
   id: "a07-jwt-weak-verification",
@@ -43,6 +47,21 @@ export const jwtWeakVerification: StaticRule = {
             evidence: [fileEvidence(file, i + 1, raw)],
             remediation:
               'alg "none"u yasaklayın; verify çağrısında algoritmayı açıkça (ör. ["HS256"]/["RS256"]) sabitleyin.',
+          });
+        }
+
+        if (ALG_CONFUSION.test(raw)) {
+          findings.push({
+            ruleId: this.id,
+            title: "JWT algoritma karışıklığı (HS + RS/ES birlikte)",
+            owasp: this.owasp,
+            severity: "high",
+            cwe: "CWE-347",
+            description:
+              "JWT doğrulaması aynı listede hem simetrik (HS256) hem asimetrik (RS256/ES256) algoritmayı kabul ediyor. Saldırgan, sunucunun public key'ini HMAC secret'ı olarak kullanıp geçerli imza üretebilir (algorithm confusion).",
+            evidence: [fileEvidence(file, i + 1, raw)],
+            remediation:
+              "verify çağrısında tek bir algoritma ailesini sabitleyin (yalnızca RS256 ya da yalnızca HS256). Simetrik ve asimetrik algoritmaları asla aynı allowlist'te tutmayın.",
           });
         }
 

@@ -181,8 +181,9 @@ program
             : r.kind === "live"
               ? pc.magenta("live  ")
               : pc.green("deps  ");
+        const cwe = r.cwe ? pc.dim(` [${r.cwe}]`) : "";
         console.log(
-          `    ${kind} ${pc.dim(r.id.padEnd(38))} ${r.title}`,
+          `    ${kind} ${pc.dim(r.id.padEnd(38))} ${r.title}${cwe}`,
         );
       }
     }

@@ -40,6 +40,10 @@ export interface ScanOptions {
 const SOURCE_GLOBS = [
   "**/*.{ts,tsx,js,jsx,mjs,cjs}",
   "**/*.{json,env,mdx}",
+  // SQL şemaları/migration'lar + Prisma şeması (RLS + şifresiz hassas veri kuralları için)
+  "**/*.{sql,prisma}",
+  // HTML dosyaları (SRI / harici script kuralı için)
+  "**/*.{html,htm}",
   "next.config.{js,ts,mjs,cjs}",
   "vite.config.{js,ts}",
   ".env*",

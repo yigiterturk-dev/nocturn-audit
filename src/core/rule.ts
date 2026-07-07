@@ -92,6 +92,8 @@ interface BaseRule {
   severity: Severity;
   kind: RuleKind;
   description?: string;
+  /** İlgili CWE kimliği (ör. "CWE-311"). Geriye-uyumlu, opsiyonel ek alan. */
+  cwe?: string;
 }
 
 export interface StaticRule extends BaseRule {

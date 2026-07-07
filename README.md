@@ -68,9 +68,31 @@ Ek bayraklar: `-t <path>` (özel targets.json), `-v` (tüm bulguları terminalde
 
 A01 Broken Access Control · A02 Cryptographic Failures · A03 Injection ·
 A04 Insecure Design · A05 Security Misconfiguration · A06 Vulnerable Components (npm audit) ·
-A07 Auth Failures · A08 Data Integrity (webhook imza) · A09 Logging · A10 SSRF.
+A07 Auth Failures · A08 Data Integrity · A09 Logging · A10 SSRF.
 
-Kural listesi: `npx nocturn-audit rules`.
+Kural listesi: `npx nocturn-audit rules` (şu an 32 kural).
+
+### Elite kurallar (yeni)
+
+- **A02 — Hassas alan şifresiz saklanıyor** (`a02-sensitive-data-plaintext`): Prisma/Drizzle/SQL
+  şema + migration'larda TC kimlik, SSN, pasaport, kart/CVV, IBAN, sağlık, OAuth/API token gibi
+  alanların `text`/`varchar`/`String` olarak, alan-bazlı şifreleme (pgcrypto/bytea) olmadan
+  tutulması. Kod içinde token/secret'ın düz DB kolonuna yazılması da yakalanır.
+- **A01/A05 — Eksik RLS** (`a01-missing-rls`): Supabase/Postgres SQL migration'larında `public`
+  tablolarının hiç `enable row level security` almaması veya RLS açık olup hiç policy olmaması.
+  (service_role anahtarının client'ta kullanımı ayrıca `a01-supabase-service-role-key` ile.)
+- **KVKK/GDPR özel nitelikli veri** (`kvkk-special-category-data`, info): sağlık/biyometrik/genetik/
+  din/etnik/cinsel/ceza alanları tespit edilince KVKK md.6 açık rıza + ek koruma hatırlatması.
+- **A02 — Git geçmişine gömülü secret** (`a02-secrets-git-history`): `git log -p` üzerinden
+  commit'lenmiş `.env` ve yüksek-entropili/sağlayıcı-paternli anahtarlar.
+- **A01 — Open redirect** (`a01-open-redirect`), **CSRF eksik** (`a01-csrf-missing`),
+  **Mass assignment** (`a01-mass-assignment`).
+- **A08 — Harici script'te SRI yok** (`a08-external-script-no-sri`);
+  **A07 — JWT algoritma karışıklığı** (`a07-jwt-weak-verification` içine eklendi).
+- **A09 — security.txt yok** (`a09-security-txt-missing`, info, RFC 9116).
+
+Her bulgu artık uygulanabildiğinde `cwe` etiketi ve `remediationCode` (kısa düzeltme örneği)
+alanlarını da taşır (JSON raporuna geriye-uyumlu, yalnızca eklenen alanlar).
 
 ## Mimari
 

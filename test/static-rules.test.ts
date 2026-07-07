@@ -19,6 +19,15 @@ import { jwtWeakVerification } from "../src/static/jwt-weak-verification.js";
 import { webhookSignature } from "../src/static/webhook-signature.js";
 import { auditLogging } from "../src/static/audit-logging.js";
 import { ssrf } from "../src/static/ssrf.js";
+import { sensitiveDataPlaintext } from "../src/static/sensitive-data-plaintext.js";
+import { missingRls } from "../src/static/missing-rls.js";
+import { kvkkSpecialCategory } from "../src/static/kvkk-special-category.js";
+import { openRedirect } from "../src/static/open-redirect.js";
+import { csrfMissing } from "../src/static/csrf-missing.js";
+import { massAssignment } from "../src/static/mass-assignment.js";
+import { externalScriptSri } from "../src/static/external-script-sri.js";
+import { securityTxt } from "../src/static/security-txt.js";
+import { scanGitDiff } from "../src/static/secrets-git-history.js";
 
 async function run(
   rule: StaticRule,
@@ -299,5 +308,215 @@ describe("A10 — ssrf", () => {
       "app/api/proxy/route.ts": `const ALLOWED_HOSTS = ["api.example.com"]; export async function GET(req){ const target = req.query.url; const u = new URL(target); if(!ALLOWED_HOSTS.includes(u.hostname)) throw new Error("no"); const r = await fetch(target); return r; }`,
     });
     expect(f.length).toBe(0);
+  });
+});
+
+describe("A02 — sensitive-data-plaintext", () => {
+  it("Prisma'da tc_kimlik String → high bulgu", async () => {
+    const f = await run(sensitiveDataPlaintext, {
+      "prisma/schema.prisma": `model User {\n  id       Int    @id\n  tc_kimlik String\n  email    String\n}`,
+    });
+    expect(f.some((x) => x.severity === "high")).toBe(true);
+    expect(f[0].cwe).toBe("CWE-311");
+  });
+  it("SQL'de ssn varchar → bulgu", async () => {
+    const f = await run(sensitiveDataPlaintext, {
+      "migrations/001.sql": `CREATE TABLE patients (\n  id serial primary key,\n  ssn varchar(11) not null,\n  cvv text\n);`,
+    });
+    expect(f.length).toBeGreaterThanOrEqual(1);
+  });
+  it("kod içinde access_token DB'ye düz yazılıyor → bulgu", async () => {
+    const f = await run(sensitiveDataPlaintext, {
+      "lib/oauth.ts": `await prisma.account.create({ data: { access_token: token, userId } });`,
+    });
+    expect(f.some((x) => x.title.includes("Token/secret"))).toBe(true);
+  });
+  it("bytea/pgp_sym_encrypt ile şifreli → temiz", async () => {
+    const f = await run(sensitiveDataPlaintext, {
+      "migrations/001.sql": `CREATE TABLE patients ( id serial, tc_kimlik bytea, ssn bytea default pgp_sym_encrypt('', '') );`,
+    });
+    expect(f.length).toBe(0);
+  });
+  it("hassas olmayan alanlar → temiz", async () => {
+    const f = await run(sensitiveDataPlaintext, {
+      "prisma/schema.prisma": `model Post { id Int @id\n  title String\n  body  String\n}`,
+    });
+    expect(f.length).toBe(0);
+  });
+});
+
+describe("A01 — missing-rls", () => {
+  it("RLS açılmamış public tablo → high", async () => {
+    const f = await run(missingRls, {
+      "supabase/migrations/001.sql": `create table public.profiles ( id uuid primary key, bio text );`,
+    });
+    expect(f.length).toBe(1);
+    expect(f[0].severity).toBe("high");
+  });
+  it("RLS açık ama policy yok → medium", async () => {
+    const f = await run(missingRls, {
+      "supabase/migrations/001.sql": `create table public.notes ( id uuid primary key );\nalter table public.notes enable row level security;`,
+    });
+    expect(f.length).toBe(1);
+    expect(f[0].severity).toBe("medium");
+  });
+  it("RLS + policy → temiz", async () => {
+    const f = await run(missingRls, {
+      "supabase/migrations/001.sql": `create table public.notes ( id uuid primary key, user_id uuid );\nalter table public.notes enable row level security;\ncreate policy "owner" on public.notes for select using (auth.uid() = user_id);`,
+    });
+    expect(f.length).toBe(0);
+  });
+  it("auth şeması tablosu → yok sayılır", async () => {
+    const f = await run(missingRls, {
+      "supabase/migrations/001.sql": `create table auth.sessions ( id uuid primary key );`,
+    });
+    expect(f.length).toBe(0);
+  });
+});
+
+describe("KVKK — special-category-data", () => {
+  it("health kolonu → info bulgu", async () => {
+    const f = await run(kvkkSpecialCategory, {
+      "prisma/schema.prisma": `model Patient { id Int @id\n  health_notes String\n}`,
+    });
+    expect(f.length).toBe(1);
+    expect(f[0].severity).toBe("info");
+  });
+  it("sıradan alanlar → temiz", async () => {
+    const f = await run(kvkkSpecialCategory, {
+      "prisma/schema.prisma": `model User { id Int @id\n  name String\n}`,
+    });
+    expect(f.length).toBe(0);
+  });
+});
+
+describe("A01 — open-redirect", () => {
+  it("searchParams hedefi doğrulanmadan redirect → bulgu", async () => {
+    const f = await run(openRedirect, {
+      "app/api/go/route.ts": `export function GET(req){ const next = new URL(req.url).searchParams.get("next"); return redirect(next); }`,
+    });
+    expect(f.length).toBeGreaterThanOrEqual(1);
+    expect(f[0].cwe).toBe("CWE-601");
+  });
+  it("startsWith('/') doğrulaması → temiz", async () => {
+    const f = await run(openRedirect, {
+      "app/api/go/route.ts": `export function GET(req){ const next = req.query.next; if(!next.startsWith("/")) return redirect("/"); return redirect(next); }`,
+    });
+    expect(f.length).toBe(0);
+  });
+});
+
+describe("A01 — csrf-missing", () => {
+  it("cookie oturumlu POST'ta CSRF yok → bulgu", async () => {
+    const f = await run(csrfMissing, {
+      "app/api/profile/route.ts": `import { cookies } from "next/headers"; export async function POST(req){ const c = cookies(); await db.user.update({ data: {} }); return Response.json({ok:true}); }`,
+    });
+    expect(f.length).toBe(1);
+    expect(f[0].severity).toBe("medium");
+  });
+  it("CSRF token doğrulaması → temiz", async () => {
+    const f = await run(csrfMissing, {
+      "app/api/profile/route.ts": `import { cookies } from "next/headers"; export async function POST(req){ const c = cookies(); if(req.headers.get("x-csrf-token")!==csrfToken) return new Response("no",{status:403}); return Response.json({ok:true}); }`,
+    });
+    expect(f.length).toBe(0);
+  });
+  it("Bearer token API → CSRF'e kapalı, temiz", async () => {
+    const f = await run(csrfMissing, {
+      "app/api/profile/route.ts": `export async function POST(req){ const auth = req.headers.get("authorization"); const session = getServerSession(); return Response.json({ok:true}); }`,
+    });
+    expect(f.length).toBe(0);
+  });
+});
+
+describe("A01 — mass-assignment", () => {
+  it("req.body doğrudan update'e → bulgu", async () => {
+    const f = await run(massAssignment, {
+      "app/api/u/route.ts": `export async function PUT(req){ const body = await req.json(); return prisma.user.update({ where:{id}, data: body }); }`,
+    });
+    expect(f.length).toBeGreaterThanOrEqual(1);
+    expect(f[0].cwe).toBe("CWE-915");
+  });
+  it("...req.body spread → bulgu", async () => {
+    const f = await run(massAssignment, {
+      "app/api/u/route.ts": `export async function POST(req){ return prisma.user.create({ data: { ...req.body } }); }`,
+    });
+    expect(f.length).toBeGreaterThanOrEqual(1);
+  });
+  it("şema ile doğrulanmış alanlar → temiz", async () => {
+    const f = await run(massAssignment, {
+      "app/api/u/route.ts": `export async function PUT(req){ const input = schema.parse(await req.json()); return prisma.user.update({ where:{id}, data: { name: input.name } }); }`,
+    });
+    expect(f.length).toBe(0);
+  });
+});
+
+describe("A08 — external-script-sri", () => {
+  it("integrity'siz harici script → bulgu", async () => {
+    const f = await run(externalScriptSri, {
+      "public/index.html": `<html><head><script src="https://cdn.example.com/a.js"></script></head></html>`,
+    });
+    expect(f.length).toBe(1);
+    expect(f[0].severity).toBe("medium");
+  });
+  it("integrity + crossorigin → temiz", async () => {
+    const f = await run(externalScriptSri, {
+      "public/index.html": `<script src="https://cdn.example.com/a.js" integrity="sha384-x" crossorigin="anonymous"></script>`,
+    });
+    expect(f.length).toBe(0);
+  });
+});
+
+describe("A09 — security-txt", () => {
+  it("next projesinde security.txt yoksa → info", async () => {
+    const f = await run(
+      securityTxt,
+      { "package.json": `{"name":"x"}` },
+      { stack: { framework: "next" } },
+    );
+    expect(f.length).toBe(1);
+    expect(f[0].severity).toBe("info");
+  });
+  it("security.txt varsa → temiz", async () => {
+    const f = await run(
+      securityTxt,
+      { "public/.well-known/security.txt": `Contact: mailto:s@x.com` },
+      { stack: { framework: "next" } },
+    );
+    expect(f.length).toBe(0);
+  });
+});
+
+describe("A02 — secrets-git-history (scanGitDiff)", () => {
+  it("commit'lenmiş stripe key ve .env → yakalar", () => {
+    const diff = [
+      "commit a1b2c3d4e5f6",
+      "+++ b/.env",
+      '+STRIPE_KEY=sk_***MASKED***',
+      "+++ b/src/config.ts",
+      '+const stripe = "sk_***MASKED***";',
+    ].join("\n");
+    const hits = scanGitDiff(diff);
+    expect(hits.some((h) => h.name === "Committed .env file")).toBe(true);
+    expect(hits.some((h) => h.name === "Stripe secret key")).toBe(true);
+  });
+  it("temiz diff (env.example, process.env) → yakalamaz", () => {
+    const diff = [
+      "commit a1b2c3d4e5f6",
+      "+++ b/.env.example",
+      "+STRIPE_KEY=your-key-here",
+      "+++ b/src/config.ts",
+      "+const stripe = process.env.STRIPE_KEY;",
+    ].join("\n");
+    const hits = scanGitDiff(diff);
+    expect(hits.length).toBe(0);
+  });
+});
+
+describe("A07 — jwt algorithm confusion", () => {
+  it("HS256 + RS256 aynı listede → bulgu", async () => {
+    const f = await run(jwtWeakVerification, {
+      "lib/jwt.ts": `const d = jwt.verify(token, key, { algorithms: ["HS256", "RS256"] });`,
+    });
+    expect(f.some((x) => x.title.includes("karışıklığı"))).toBe(true);
   });
 });

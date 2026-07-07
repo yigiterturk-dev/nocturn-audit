@@ -8,9 +8,10 @@ import type { StaticRule } from "../core/rule.js";
  * ownership (user_id/owner eşleşmesi) kontrolü yakınlarda yok.
  */
 
-// params.id / searchParams.get('id') / query.id / req.query.id gibi kaynaklar
+// GERÇEK nesne-ID kaynakları. 'format' gibi davranışsal query param'ları IDOR değildir
+// → yalnızca id/slug/uuid/*Id benzeri anahtarları yakala.
 const ID_SOURCE =
-  /(params\.(id|slug|userId|\w*Id)|searchParams\.get\(|req\.query\.\w+|query\.\w*[iI]d)/;
+  /(params\.(id|slug|uuid|userId|\w*Id)\b|searchParams\.get\(\s*['"`](id|slug|uuid|\w*[iI]d|leadId|conversation_id)['"`]\s*\)|req\.query\.(id|\w*[iI]d)\b|query\.\w*[iI]d\b)/;
 
 // bu id ile doğrudan tekil sorgu
 const QUERY_USE =
@@ -18,6 +19,11 @@ const QUERY_USE =
 
 const OWNERSHIP_HINTS =
   /(user_id|userId|owner|ownerId|auth\.uid\(\)|session\.user|currentUser|\.eq\(\s*['"]user)/i;
+
+// Route/handler ownership sınırı bir guard ile korunuyorsa (requireAdmin/requireGate/
+// requireAuth) ve uygulama tek-kiracılı ise IDOR uygulanamaz → dosyayı ele.
+const GUARD_HINTS =
+  /(requireAdmin|requireGate|requireAuth|requireUser|requireSession|ensureAuth|assertAdmin|getServerSession|isAdmin\b|\bauth\(\)\s*;?)/i;
 
 export const idorDirectObject: StaticRule = {
   id: "a01-idor-direct-object-reference",
@@ -33,6 +39,9 @@ export const idorDirectObject: StaticRule = {
         continue;
       const content = ctx.read(file);
       if (!content) continue;
+      // Dosyada bir guard varsa (requireAdmin/requireGate/requireAuth) ownership sınırı
+      // zaten korunuyor; tek-kiracılı/tek-admin uygulamada IDOR uygulanamaz → ele.
+      if (GUARD_HINTS.test(content)) continue;
       const lines = content.split(/\r?\n/);
 
       for (let i = 0; i < lines.length; i++) {

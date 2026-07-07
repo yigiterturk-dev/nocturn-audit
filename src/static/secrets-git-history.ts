@@ -83,6 +83,31 @@ function isExcludedFile(file: string): boolean {
   return TEST_FILE.test(f) || DOC_FILE.test(f) || LOCK_FILE.test(f);
 }
 
+// Google/Firebase CLIENT anahtar config dosyaları — buradaki AIza... anahtarları
+// APK/bundle'a gömülmek üzere tasarlanmış CLIENT anahtarlarıdır (secret değil).
+const CLIENT_GOOGLE_CONFIG = /google-services\.json|GoogleService-Info\.plist/i;
+
+/**
+ * Bir Supabase/JWT token'ının payload.role alanını çözer.
+ * GÜVENLİK: token veya tam payload ASLA döndürülmez/loglanmaz — yalnızca `role`
+ * alanı okunup redakte edilir. `anon` = public publishable key, `service_role` = secret.
+ * Çözülemezse null döner.
+ */
+function jwtRole(token: string): string | null {
+  try {
+    const parts = token.split(".");
+    if (parts.length < 2) return null;
+    let b64 = parts[1].replace(/-/g, "+").replace(/_/g, "/");
+    while (b64.length % 4) b64 += "=";
+    const json = Buffer.from(b64, "base64").toString("utf8");
+    const obj = JSON.parse(json) as { role?: unknown };
+    // SADECE role alanını al; başka hiçbir credential materyali okunmaz.
+    return typeof obj.role === "string" ? obj.role : null;
+  } catch {
+    return null;
+  }
+}
+
 function shannon(s: string): number {
   const freq: Record<string, number> = {};
   for (const c of s) freq[c] = (freq[c] ?? 0) + 1;
@@ -147,6 +172,18 @@ export function scanGitDiff(diff: string): GitSecretHit[] {
     for (const p of PROVIDER_PATTERNS) {
       const m = p.re.exec(added);
       if (m) {
+        // JWT/service token: rol'ü çöz. role:"anon" → public publishable key,
+        // sır DEĞİL, atla. Yalnızca service_role (veya çözülemez) = gerçek sır.
+        if (p.name === "JWT/service token") {
+          const role = jwtRole(m[0]);
+          if (role === "anon") continue;
+        }
+        // AIza Google/Firebase anahtarı client config dosyasında → client key, atla.
+        // (private_key/client_email içeren gerçek service-account "Private key block"
+        //  pattern'i ile ayrıca yakalanır.)
+        if (p.name === "Google API key" && CLIENT_GOOGLE_CONFIG.test(file)) {
+          continue;
+        }
         const key = `${commit}:${file}:${p.name}:${m[0].slice(0, 8)}`;
         if (seen.has(key)) continue;
         seen.add(key);

@@ -16,7 +16,7 @@ import type { StaticContext, StaticRule } from "../core/rule.js";
 const CREATE_TABLE =
   /create\s+table\s+(?:if\s+not\s+exists\s+)?([a-zA-Z0-9_."]+)/gi;
 const ENABLE_RLS =
-  /alter\s+table\s+(?:only\s+)?([a-zA-Z0-9_."]+)\s+enable\s+row\s+level\s+security/gi;
+  /alter\s+table\s+(?:if\s+exists\s+)?(?:only\s+)?([a-zA-Z0-9_."]+)\s+enable\s+row\s+level\s+security/gi;
 const CREATE_POLICY =
   /create\s+policy\s+[^;]*?\bon\s+([a-zA-Z0-9_."]+)/gi;
 
@@ -69,6 +69,36 @@ function lineOf(content: string, index: number): number {
   return content.slice(0, index).split(/\r?\n/).length;
 }
 
+// Prisma/Drizzle ORM migration yolları — bu ORM'ler tasarımı gereği RLS üretmez ve
+// server-side privileged (owner) connection kullanır; RLS mimari olarak uygulanamaz.
+const ORM_MIGRATION_PATH =
+  /(^|\/)(prisma\/migrations|drizzle)(\/|$)|\.prisma$/i;
+
+/**
+ * Kural yalnızca GERÇEK Supabase istemci projelerinde anlamlıdır: repoda
+ * @supabase/supabase-js (veya @supabase/ssr) bağımlılığı VE anon/publishable
+ * anahtarla client-side erişim olmalı. Aksi halde (Neon/düz Postgres + server-side
+ * owner connection, Prisma/Drizzle) RLS tehdit modeli uygulanamaz.
+ */
+function isSupabaseClientProject(ctx: StaticContext): boolean {
+  const pkg = ctx.read("package.json");
+  const hasSupabaseDep = !!pkg && /@supabase\/(supabase-js|ssr)/.test(pkg);
+  if (hasSupabaseDep) {
+    // stack.db supabase VEYA anon/publishable client erişimi varsa Supabase mimarisi.
+    if (ctx.project.stack.db === "supabase") {
+      const anonClient =
+        ctx.grep(
+          /(NEXT_PUBLIC_SUPABASE_ANON_KEY|SUPABASE_ANON_KEY|PUBLISHABLE|createBrowserClient|createClientComponentClient|createPagesBrowserClient|anonKey|supabaseAnonKey)/i,
+        ).length > 0;
+      if (anonClient) return true;
+    }
+  }
+  return ctx.project.stack.db === "supabase" &&
+    ctx.grep(
+      /(NEXT_PUBLIC_SUPABASE_ANON_KEY|createBrowserClient|createClientComponentClient|anonKey)/i,
+    ).length > 0;
+}
+
 export const missingRls: StaticRule = {
   id: "a01-missing-rls",
   title: "Eksik Row Level Security (RLS)",
@@ -79,9 +109,17 @@ export const missingRls: StaticRule = {
   // SQL şemasında RLS'siz public tablo → deterministik (SQL parse).
   confidence: "kesin",
   run(ctx: StaticContext): Finding[] {
-    const sqlFiles = ctx.files.filter((f) =>
-      /\.sql$/i.test(f.replace(/\\/g, "/")),
-    );
+    // Yalnızca gerçek Supabase istemci projeleri (anon/publishable key ile PostgREST
+    // erişimi). Neon/düz-Postgres + Prisma/Drizzle server-side owner connection ise
+    // RLS tehdit modeli uygulanamaz → hiç çalıştırma.
+    if (!isSupabaseClientProject(ctx)) return [];
+
+    const sqlFiles = ctx.files.filter((f) => {
+      const p = f.replace(/\\/g, "/");
+      // Prisma/Drizzle migration dosyalarını tamamen ele.
+      if (ORM_MIGRATION_PATH.test(p)) return false;
+      return /\.sql$/i.test(p);
+    });
     if (sqlFiles.length === 0) return [];
 
     // Migration'lar birden çok dosyaya yayılabilir → tümünü topla.
@@ -135,27 +173,10 @@ export const missingRls: StaticRule = {
             `create policy "owner_select" on ${key}\n` +
             `  for select using (auth.uid() = user_id);`,
         });
-      } else if (!policied.has(key)) {
-        findings.push({
-          ruleId: this.id,
-          title: `RLS açık ama policy yok: ${name}`,
-          owasp: this.owasp,
-          severity: "medium",
-          cwe: this.cwe,
-          description:
-            `\`${key}\` tablosunda RLS açık ancak hiç \`create policy\` tanımlı değil. ` +
-            "Bu durumda tablo varsayılan olarak tamamen kilitlidir (uygulama kırılabilir) ya da sonradan gevşek bir policy eklenerek erişim istemeden açılabilir. Erişim modeli açıkça tanımlanmalı.",
-          evidence: [
-            fileEvidence(
-              loc.file,
-              loc.line,
-              `create table ${key} (RLS açık, policy yok)`,
-            ),
-          ],
-          remediation:
-            "Tabloya erişim ihtiyacına uygun, en az yetki ilkesiyle policy(ler) tanımlayın; policy eklerken `using (true)` gibi her şeyi açan ifadelerden kaçının.",
-        });
       }
+      // NOT: "RLS açık + policy yok" durumu fail-closed (default deny) — mümkün olan
+      // en güvenli durumdur, açık DEĞİLDİR; bilinçli service-role-only desendir.
+      // Bu yüzden artık bulgu üretmiyoruz (eski medium bulgu FP idi).
     }
     return findings;
   },

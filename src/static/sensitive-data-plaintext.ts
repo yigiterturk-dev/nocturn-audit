@@ -92,25 +92,37 @@ export const sensitiveDataPlaintext: StaticRule = {
       for (let i = 0; i < lines.length; i++) {
         const raw = lines[i];
         if (ENCRYPTION_HINT.test(raw)) continue;
+        // Yorum satırları → gerçek şema/persist akışı değil, ele.
+        if (/^\s*(\/\/|\*|\/\*)/.test(raw)) continue;
 
-        // (A) Şema/migration: hassas isimli düz-metin kolon
+        // (A) Şema/migration: hassas isimli düz-metin kolon.
+        // Bu SADECE bir DDL kolon tanımıdır — gerçek bir plaintext-persist veri akışı
+        // veya decrypt-bypass kanıtı yoktur. Bu yüzden en fazla LOW (uyumluluk notu),
+        // asla high değil. Ayrıca framework-zorunlu auth adapter alanlarını (NextAuth/
+        // Auth.js Account: refresh_token/access_token/id_token) whitelist'e alıyoruz.
+        const isFrameworkAuthField =
+          /\b(refresh_token|access_token|id_token|oauth_token|session_token)\b/i.test(
+            raw,
+          );
         if (
           (schema || /\.(ts|js)$/.test(file)) &&
           SENSITIVE_NAME.test(raw) &&
           PLAINTEXT_TYPE.test(raw) &&
-          looksLikeColumnDef(raw)
+          looksLikeColumnDef(raw) &&
+          !isFrameworkAuthField
         ) {
           const key = `${file}:${i}:col`;
           if (!seen.has(key)) {
             seen.add(key);
             findings.push({
               ruleId: this.id,
-              title: this.title,
+              title: this.title + " (şema kolon tanımı — uyumluluk notu)",
               owasp: this.owasp,
-              severity: "high",
+              severity: "low",
+              confidence: "olası",
               cwe: this.cwe,
               description:
-                "Hassas bir alan (kimlik/SSN/kart/CVV/IBAN/sağlık/token vb.) düz metin bir kolon tipinde (text/varchar/String), alan-bazlı şifreleme olmadan saklanıyor. Veritabanı yedeği veya sızıntısında bu veriler doğrudan okunur.",
+                "Hassas bir alan (kimlik/SSN/kart/CVV/IBAN/sağlık/token vb.) düz metin bir kolon tipinde (text/varchar/String) tanımlı görünüyor. Bu yalnızca bir şema/DDL kolon tanımıdır; verinin gerçekten şifresiz saklandığını doğrulamaz. Alan-bazlı şifreleme (pgcrypto/uygulama katmanı) yoksa, DB yedeği/sızıntısında bu veriler okunabilir — uyumluluk açısından gözden geçirin.",
               evidence: [fileEvidence(file, i + 1, raw)],
               remediation:
                 "Alanı uygulama tarafında şifreleyip saklayın veya pgcrypto (pgp_sym_encrypt) ile şifreli tutun; kolonu bytea yapın. Kart verisi için mümkünse tokenizasyon/PCI-DSS uyumlu sağlayıcı kullanın.",
@@ -131,9 +143,24 @@ export const sensitiveDataPlaintext: StaticRule = {
           const nearMutation =
             DB_MUTATION_SINK.test(raw) ||
             lines.slice(Math.max(0, i - 4), i).some((l) => DB_MUTATION_SINK.test(l));
+          // NextAuth/Auth.js adapter bağlamı: Account modeli token alanlarını
+          // adapter'ın kendisi (framework zorunluluğu) düz saklar → whitelist.
+          const win = lines.slice(Math.max(0, i - 8), i + 4).join("\n");
+          const nextAuthAdapter =
+            /(PrismaAdapter|DrizzleAdapter|@auth\/|next-auth|AdapterAccount|linkAccount|account\.(provider|providerAccountId))/i.test(
+              win,
+            );
+          // Değer bir auth/imza/query-string şablonu ise (ör. `apiKey:${apiKey}&...`)
+          // bu transit bir değer; DB'ye persist edilen bir token DEĞİL → ele.
+          const isAuthStringTemplate =
+            /[&?]|authString|signature|\bhmac\b|basic\s|Authorization|header/i.test(
+              tm ? tm[2] : "",
+            );
           if (
             tm &&
             nearMutation &&
+            !nextAuthAdapter &&
+            !isAuthStringTemplate &&
             !ENCRYPTION_HINT.test(raw) &&
             // Değer bir şifreleme/hash sarmalayıcısıyla korunuyorsa düz metin DEĞİL.
             !VALUE_IS_PROTECTED.test(tm[2]) &&
@@ -146,10 +173,13 @@ export const sensitiveDataPlaintext: StaticRule = {
                 ruleId: this.id,
                 title: "Token/secret düz metin DB kolonuna yazılıyor",
                 owasp: this.owasp,
-                severity: "medium",
+                // Gerçek bir plaintext-persist veri akışı (token → INSERT/UPDATE,
+                // şifreleme yok) → deterministik/gerçek bulgu.
+                severity: "high",
+                confidence: "kesin",
                 cwe: this.cwe,
                 description:
-                  "OAuth/API token ya da secret, bir DB yazma çağrısında (insert/update/upsert) düz metin olarak saklanıyor. Sızıntıda bu token'lar doğrudan kullanılabilir.",
+                  "OAuth/API token ya da secret, bir DB yazma çağrısında (insert/update/upsert) düz metin olarak saklanıyor; yakınında alan-bazlı şifreleme/hash yok. Sızıntıda bu token'lar doğrudan kullanılabilir.",
                 evidence: [fileEvidence(file, i + 1, raw)],
                 remediation:
                   "Token/secret'leri şifreleyerek saklayın (alan-bazlı şifreleme / KMS) veya yalnızca hash'ini tutup ham değeri saklamayın.",

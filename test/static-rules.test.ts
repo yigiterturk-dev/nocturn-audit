@@ -46,12 +46,33 @@ describe("A01 — api-route-auth-missing", () => {
     expect(f[0].severity).toBe("high");
     expect(f[0].confidence).toBe("olası");
   });
-  it("auth'suz DB OKUYAN (GET) route → medium (public veri olabilir)", async () => {
+  it("auth'suz DB OKUYAN (GET) route → low (public veri olabilir)", async () => {
     const f = await run(apiRouteAuthMissing, {
       "app/api/orders/route.ts": `export async function GET(req){ const data = await db.orders.findMany(); return Response.json(data); }`,
     });
     expect(f.length).toBe(1);
-    expect(f[0].severity).toBe("medium");
+    expect(f[0].severity).toBe("low");
+  });
+  it("login (auth sınırı) route → bulgu YOK (auth üretir, tüketmez)", async () => {
+    const f = await run(apiRouteAuthMissing, {
+      "app/api/admin/login/route.ts": `export async function POST(req){ const b = await req.json(); const ok = await db.users.findFirst(); return Response.json({ok:true}); }`,
+    });
+    expect(f.length).toBe(0);
+  });
+  it("rate-limit + validation'lı public form (newsletter) → bulgu YOK", async () => {
+    const f = await run(apiRouteAuthMissing, {
+      "app/api/newsletter/route.ts": `import { rateLimit } from "@/lib/rate-limit";
+const EMAIL_RE = /^[^@]+@[^@]+$/;
+export async function POST(req){ const rl = rateLimit("nl"); if(!rl.ok) return new Response("429",{status:429}); const b = await req.json(); if(!EMAIL_RE.test(b.email)) return new Response("bad",{status:400}); await db.subscriber.upsert({ where:{email:b.email}, create:{email:b.email, confirmed:false} }); return Response.json({ok:true}); }`,
+    });
+    expect(f.length).toBe(0);
+  });
+  it("GET public listeleme + mutasyon isAuthorized'lı → bulgu YOK", async () => {
+    const f = await run(apiRouteAuthMissing, {
+      "app/api/blog/route.ts": `export async function GET(req){ return Response.json(await db.posts.findMany()); }
+export async function POST(req){ if(!isAuthorized(req)) return new Response("401",{status:401}); await db.posts.create({data:await req.json()}); return Response.json({ok:true}); }`,
+    });
+    expect(f.length).toBe(0);
   });
   it("DB'ye dokunmayan public route (og görsel) → bulgu yok", async () => {
     const f = await run(apiRouteAuthMissing, {
@@ -90,6 +111,24 @@ describe("A01 — idor-direct-object", () => {
   it("user_id filtresi varsa bulgu üretmez", async () => {
     const f = await run(idorDirectObject, {
       "app/api/doc/route.ts": `export async function GET(req,{params}){ const doc = await supabase.from("docs").select().eq("id", params.id).eq("user_id", session.user.id).single(); return doc; }`,
+    });
+    expect(f.length).toBe(0);
+  });
+  it("requireAdmin/requireGate guard'lı route → bulgu YOK (tek-kiracı)", async () => {
+    const f = await run(idorDirectObject, {
+      "app/api/export/route.ts": `export async function GET(req){ const unauth = requireAdmin(req); if(unauth) return unauth; const id = req.nextUrl.searchParams.get("conversation_id"); const c = await supabase.from("conv").select().eq("id", id).single(); return Response.json(c); }`,
+    });
+    expect(f.length).toBe(0);
+  });
+  it("davranışsal query param ('format') → nesne ID değil, bulgu YOK", async () => {
+    const f = await run(idorDirectObject, {
+      "app/api/export/route.ts": `export async function GET(req){ const format = req.nextUrl.searchParams.get("format"); const rows = await supabase.from("t").select().eq("kind", format).single(); return Response.json(rows); }`,
+    });
+    expect(f.length).toBe(0);
+  });
+  it("public referans/lookup param (city/district) → IDOR değil, bulgu YOK", async () => {
+    const f = await run(idorDirectObject, {
+      "app/api/rapor/route.ts": `export async function GET(req){ const city = req.nextUrl.searchParams.get("city"); const district = req.nextUrl.searchParams.get("district"); const d = districtData.find(x => x.city === city); return Response.json(d); }`,
     });
     expect(f.length).toBe(0);
   });
@@ -141,6 +180,26 @@ describe("A02 — hardcoded-secrets", () => {
       { tracked: [".env"] },
     );
     expect(f.some((x) => x.severity === "critical")).toBe(true);
+  });
+  it("env-var ADI atanıyor (const SECRET = 'AGGREGATOR_WEBHOOK_SECRET') → bulgu YOK", async () => {
+    const f = await run(hardcodedSecrets, {
+      "src/lib/adapters/aggregator.ts": `const SECRET = "AGGREGATOR_WEBHOOK_SECRET";\nconst KEY = "AGGREGATOR_API_KEY";\nconst v = env(SECRET);`,
+    });
+    expect(f.length).toBe(0);
+  });
+  it("scrape edilmiş 3. parti HTML dump'ındaki key → bulgu YOK", async () => {
+    const f = await run(hardcodedSecrets, {
+      "lgbs_raw.html": `<script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyD1234567890abcdefghijklmnopqrstuvw"></script>`,
+    });
+    expect(f.length).toBe(0);
+  });
+  it("gerçek gömülü service_role JWT (dump-schema.mjs) → high kesin (KORUNUR)", async () => {
+    const jwt =
+      "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoic2VydmljZV9yb2xlIiwiaXNzIjoic3VwYWJhc2UifQ.AbCdEfGhIjKlMnOpQrStUvWxYz0123456789ABCDEF";
+    const f = await run(hardcodedSecrets, {
+      "scripts/dump-schema.mjs": `const key = "${jwt}";`,
+    });
+    expect(f.some((x) => x.severity === "high" || x.severity === "critical")).toBe(true);
   });
 });
 
@@ -226,6 +285,30 @@ describe("A03 — sql-injection", () => {
     });
     expect(f.length).toBe(0);
   });
+  it("JSX kapanış etiketi </div></div> → SQL değil, bulgu YOK", async () => {
+    const f = await run(sqlInjection, {
+      "src/CigkoftePanel.jsx": `return (<div>{items.map(i => <div key={i.id}>{i.name}</div>)}</div></div>);`,
+    });
+    expect(f.length).toBe(0);
+  });
+  it("Tailwind className template literal (from-*) → SQL değil, bulgu YOK", async () => {
+    const f = await run(sqlInjection, {
+      "src/app/exchanges/page.tsx": `const cls = \`bg-gradient-to-r from-\${color}-500 to-blue-500 px-4\`; return <div className={cls} />;`,
+    });
+    expect(f.length).toBe(0);
+  });
+  it("fetch body JSON.stringify (PostgREST HTTP) → SQL değil, bulgu YOK", async () => {
+    const f = await run(sqlInjection, {
+      "scripts/seed.ts": `await fetch(url, { method: "POST", body: JSON.stringify(rec), headers });`,
+    });
+    expect(f.length).toBe(0);
+  });
+  it("Supabase ORM builder (.from().select().or().ilike()) → parametreli, bulgu YOK", async () => {
+    const f = await run(sqlInjection, {
+      "lib/search.ts": `const { data } = await supabase.from("products").select("*").or(\`name.ilike.%\${q}%\`).eq("active", true);`,
+    });
+    expect(f.length).toBe(0);
+  });
 });
 
 describe("A03 — dangerous-eval", () => {
@@ -263,6 +346,44 @@ describe("A03 — dangerous-eval", () => {
     });
     const cp = f.find((x) => x.title.includes("child_process"));
     expect(cp!.severity).toBe("high");
+  });
+  it("JSON-LD structured data (application/ld+json) → bulgu YOK", async () => {
+    const f = await run(dangerousEval, {
+      "app/layout.tsx": `const jsonLd = { "@type": "Org", name: "X" };
+export default function L(){ return <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }} />; }`,
+    });
+    const dom = f.find((x) => x.title.includes("dangerouslySetInnerHTML"));
+    expect(dom).toBeFalsy();
+  });
+  it("statik hardcoded string (setTimeout failsafe) → dom bulgusu YOK", async () => {
+    const f = await run(dangerousEval, {
+      "app/layout.tsx": `export default function L(){ return <script dangerouslySetInnerHTML={{ __html: "setTimeout(function(){document.body.classList.add('in')},2500);" }} />; }`,
+    });
+    const dom = f.find((x) => x.title.includes("dangerouslySetInnerHTML"));
+    expect(dom).toBeFalsy();
+  });
+  it("service worker template literal (interpolasyonsuz) → dom bulgusu YOK", async () => {
+    const f = await run(dangerousEval, {
+      "app/layout.tsx": "export default function L(){ return <script dangerouslySetInnerHTML={{ __html: `if('serviceWorker' in navigator){navigator.serviceWorker.register('/sw.js')}` }} />; }",
+    });
+    const dom = f.find((x) => x.title.includes("dangerouslySetInnerHTML"));
+    expect(dom).toBeFalsy();
+  });
+  it("DOMPurify/sanitize uygulanmış (ld+json olmadan) → dom bulgusu YOK", async () => {
+    const f = await run(dangerousEval, {
+      "components/RichText.tsx": `export function RT({ body }){ const clean = DOMPurify.sanitize(body); return <div dangerouslySetInnerHTML={{ __html: clean }} />; }`,
+    });
+    const dom = f.find((x) => x.title.includes("dangerouslySetInnerHTML"));
+    expect(dom).toBeFalsy();
+  });
+  it("prop/istek kaynaklı __html (tainted) → dom high/kesin", async () => {
+    const f = await run(dangerousEval, {
+      "components/Comment.tsx": `export default function C({ userComment }){ return <div dangerouslySetInnerHTML={{ __html: userComment }} />; }`,
+    });
+    const dom = f.find((x) => x.title.includes("dangerouslySetInnerHTML"));
+    expect(dom).toBeTruthy();
+    expect(dom!.severity).toBe("high");
+    expect(dom!.confidence).toBe("kesin");
   });
 });
 
@@ -393,12 +514,30 @@ describe("A10 — ssrf", () => {
 });
 
 describe("A02 — sensitive-data-plaintext", () => {
-  it("Prisma'da tc_kimlik String → high bulgu", async () => {
+  it("Prisma'da tc_kimlik String → low/olası uyumluluk notu (DDL, HIGH değil)", async () => {
     const f = await run(sensitiveDataPlaintext, {
       "prisma/schema.prisma": `model User {\n  id       Int    @id\n  tc_kimlik String\n  email    String\n}`,
     });
-    expect(f.some((x) => x.severity === "high")).toBe(true);
+    // Salt DDL kolon tanımı → high değil, low/olası uyumluluk notu.
+    expect(f.some((x) => x.severity === "low")).toBe(true);
+    expect(f.some((x) => x.severity === "high")).toBe(false);
     expect(f[0].cwe).toBe("CWE-311");
+    expect(f[0].confidence).toBe("olası");
+  });
+  it("NextAuth adapter refresh_token/access_token şema alanı → whitelist (bulgu YOK)", async () => {
+    const f = await run(sensitiveDataPlaintext, {
+      "prisma/schema.prisma": `model Account {\n  id            Int    @id\n  refresh_token String? @db.Text\n  access_token  String? @db.Text\n  id_token      String? @db.Text\n}`,
+    });
+    expect(f.length).toBe(0);
+  });
+  it("token DB'ye düz yazılıyor (şifresiz persist) → high/kesin", async () => {
+    const f = await run(sensitiveDataPlaintext, {
+      "lib/tokens.ts": `await db.tokens.insert({ access_token: googleToken, provider: "google" });`,
+    });
+    const t = f.find((x) => x.title.includes("Token/secret"));
+    expect(t).toBeTruthy();
+    expect(t!.severity).toBe("high");
+    expect(t!.confidence).toBe("kesin");
   });
   it("SQL'de ssn varchar → bulgu", async () => {
     const f = await run(sensitiveDataPlaintext, {
@@ -433,28 +572,65 @@ describe("A02 — sensitive-data-plaintext", () => {
 });
 
 describe("A01 — missing-rls", () => {
-  it("RLS açılmamış public tablo → high", async () => {
+  // Kural yalnızca gerçek Supabase istemci projelerinde (anon key + client erişim) çalışır.
+  const SUPA = {
+    "package.json": `{"dependencies":{"@supabase/supabase-js":"^2.0.0"}}`,
+    "src/lib/supabase.ts": `import { createClient } from "@supabase/supabase-js";
+export const supabase = createClient(url, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY);`,
+  };
+  it("Supabase istemci projesinde RLS açılmamış public tablo → high", async () => {
     const f = await run(missingRls, {
+      ...SUPA,
       "supabase/migrations/001.sql": `create table public.profiles ( id uuid primary key, bio text );`,
     });
     expect(f.length).toBe(1);
     expect(f[0].severity).toBe("high");
   });
-  it("RLS açık ama policy yok → medium", async () => {
+  it("RLS açık ama policy yok → fail-closed, bulgu YOK (eski medium FP idi)", async () => {
     const f = await run(missingRls, {
+      ...SUPA,
       "supabase/migrations/001.sql": `create table public.notes ( id uuid primary key );\nalter table public.notes enable row level security;`,
     });
-    expect(f.length).toBe(1);
-    expect(f[0].severity).toBe("medium");
+    expect(f.length).toBe(0);
+  });
+  it("aynı dosyada 'alter table if exists ... enable RLS' → bulgu YOK", async () => {
+    const f = await run(missingRls, {
+      ...SUPA,
+      "supabase/migrations/001.sql": `create table if not exists public.snap ( id uuid primary key );\ncreate table if not exists public.evt ( id uuid primary key );\nalter table if exists public.snap enable row level security;\nalter table if exists public.evt  enable row level security;`,
+    });
+    expect(f.length).toBe(0);
   });
   it("RLS + policy → temiz", async () => {
     const f = await run(missingRls, {
+      ...SUPA,
       "supabase/migrations/001.sql": `create table public.notes ( id uuid primary key, user_id uuid );\nalter table public.notes enable row level security;\ncreate policy "owner" on public.notes for select using (auth.uid() = user_id);`,
+    });
+    expect(f.length).toBe(0);
+  });
+  it("Prisma migration (server-side owner conn, Supabase değil) → bulgu YOK", async () => {
+    const f = await run(missingRls, {
+      "package.json": `{"dependencies":{"@prisma/client":"^6.0.0","next-auth":"^4.0.0"}}`,
+      "prisma/migrations/0001_init/migration.sql": `CREATE TABLE "User" ( id TEXT PRIMARY KEY, email TEXT );`,
+    });
+    expect(f.length).toBe(0);
+  });
+  it("Drizzle migration (Neon + server-only) → bulgu YOK", async () => {
+    const f = await run(missingRls, {
+      "package.json": `{"dependencies":{"drizzle-orm":"^0.3.0","@neondatabase/serverless":"^0.9.0"}}`,
+      "drizzle/0000_init.sql": `CREATE TABLE "subscribers" ( id serial primary key, email text );`,
+    });
+    expect(f.length).toBe(0);
+  });
+  it("Supabase olmayan proje (anon key yok) → hiç çalışmaz", async () => {
+    const f = await run(missingRls, {
+      "package.json": `{"dependencies":{"pg":"^8.0.0"}}`,
+      "db/schema.sql": `create table public.profiles ( id uuid primary key, bio text );`,
     });
     expect(f.length).toBe(0);
   });
   it("auth şeması tablosu → yok sayılır", async () => {
     const f = await run(missingRls, {
+      ...SUPA,
       "supabase/migrations/001.sql": `create table auth.sessions ( id uuid primary key );`,
     });
     expect(f.length).toBe(0);
@@ -666,6 +842,47 @@ describe("A02 — secrets-git-history (scanGitDiff)", () => {
     ].join("\n");
     const hits = scanGitDiff(diff);
     expect(hits.some((h) => h.name === "JWT/service token")).toBe(true);
+  });
+
+  // --- JWT rol ayrımı: anon (public publishable) → ele; service_role → high
+  const makeJwt = (role: string): string => {
+    const h = Buffer.from(JSON.stringify({ alg: "HS256", typ: "JWT" })).toString("base64url");
+    const p = Buffer.from(JSON.stringify({ role, iss: "supabase" })).toString("base64url");
+    return `${h}.${p}.SIGdummy0123456789abcdefABCDEF`;
+  };
+  it("Supabase anon (role:anon) publishable key → yakalamaz (public)", () => {
+    const diff = [
+      "commit 6665227402",
+      "+++ b/dashboard/scratch/check_db.js",
+      `+const anon = "${makeJwt("anon")}";`,
+    ].join("\n");
+    expect(scanGitDiff(diff).length).toBe(0);
+  });
+  it("Supabase service_role JWT → yakalar (high)", () => {
+    const diff = [
+      "commit 6665227403",
+      "+++ b/scripts/dump-schema.mjs",
+      `+const key = "${makeJwt("service_role")}";`,
+    ].join("\n");
+    const hits = scanGitDiff(diff);
+    expect(hits.some((h) => h.name === "JWT/service token")).toBe(true);
+  });
+  it("google-services.json içindeki AIzaSy client key → yakalamaz (client config)", () => {
+    const diff = [
+      "commit 5814a1569a",
+      "+++ b/mobile/android/app/google-services.json",
+      '+      "current_key": "AIzaSyD1234567890abcdefghijklmnopqrstuvw"',
+    ].join("\n");
+    expect(scanGitDiff(diff).length).toBe(0);
+  });
+  it("normal .mjs script'teki AIzaSy Google API key → yakalar (client config değil)", () => {
+    const diff = [
+      "commit 5814a1569b",
+      "+++ b/seed-products.mjs",
+      '+const API_KEY = "AIzaSyD1234567890abcdefghijklmnopqrstuvw";',
+    ].join("\n");
+    const hits = scanGitDiff(diff);
+    expect(hits.some((h) => h.name === "Google API key")).toBe(true);
   });
 });
 

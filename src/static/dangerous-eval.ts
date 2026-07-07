@@ -58,6 +58,48 @@ const REQUEST_INPUT = /(req\.|\breq\b|params|searchParams|query\.|\bbody\b|formD
 // Komutun gerçekten kullanıcı girdisiyle inşa edildiğine dair güçlü işaretler.
 const CMD_TAINT = /(shell\s*:\s*true)/i;
 
+// --- dangerouslySetInnerHTML (DOM XSS) veri-akışı yardımcıları ---
+// __html değerine saldırgan-kontrollü veri akıyorsa (tainted) gerçek XSS.
+const DOM_TAINT =
+  /(req\.|request\.|\bparams\b|searchParams|nextUrl|query\.|\bbody\b|formData|props\.|\bprops\b|useParams|useSearchParams|\.get\(|await\s+fetch|fetch\(|cms|contentful|sanity|payload|graphql|window\.location|document\.location|location\.(search|hash|href)|getData|userInput|comment|message|description)/i;
+// Değer üzerinde HTML-güvenli sanitize/escape uygulanmış → düşür/ele.
+const DOM_SANITIZER =
+  /(escapeJsonLd|sanitize\w*|DOMPurify|createDOMPurify|\bescapeHtml\b|\bescape\s*\(|xss\s*\(|clean\s*\()/i;
+
+/**
+ * dangerouslySetInnerHTML sink'inin `__html` değerinin saldırgan-kontrollü
+ * (tainted) olup olmadığını, dosya içi tek-seviye değişken çözümlemesiyle karar verir.
+ * Yalnızca `role` benzeri kimlik-bilgisi değil, tam veri-akışı incelemesi.
+ */
+function htmlValueTainted(valExpr: string, content: string): boolean {
+  if (DOM_TAINT.test(valExpr)) return true;
+  const ids = valExpr.match(/[A-Za-z_$][A-Za-z0-9_$]*/g) ?? [];
+  const SKIP = new Set(["JSON", "stringify", "String", "__html"]);
+  const esc = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  for (const id of ids) {
+    if (SKIP.has(id)) continue;
+    // const/let/var X = <rhs>  → RHS tainted mi?
+    const asg = new RegExp(
+      "(?:const|let|var)\\s+" + esc(id) + "\\s*=\\s*([^\\n;]+)",
+    ).exec(content);
+    if (asg) {
+      // Yerel bir const/literal atamasına çözülüyor → RHS tainted değilse güvenli.
+      if (DOM_TAINT.test(asg[1])) return true;
+      continue;
+    }
+    // Destructured prop / fonksiyon parametresi → prop-kaynaklı (spec'e göre tainted:
+    // ebeveyn bileşenden gelen değer saldırgan-kontrollü olabilir).
+    const destructured = new RegExp(
+      "(?:function\\s+\\w+\\s*\\(|=>|\\(|,)\\s*\\{[^{}]*\\b" + esc(id) + "\\b[^{}]*\\}",
+    );
+    const positionalParam = new RegExp(
+      "function\\s+\\w+\\s*\\([^)]*\\b" + esc(id) + "\\b|\\(\\s*" + esc(id) + "\\s*[,:)]",
+    );
+    if (destructured.test(content) || positionalParam.test(content)) return true;
+  }
+  return false;
+}
+
 export const dangerousEval: StaticRule = {
   id: "a03-dangerous-execution-sink",
   title: "Tehlikeli yürütme / DOM enjeksiyon noktası",
@@ -83,9 +125,48 @@ export const dangerousEval: StaticRule = {
           let note = "";
 
           if (sig.kind === "dom") {
-            // Ham HTML enjeksiyon noktası — deterministik sink.
-            severity = "high";
-            confidence = "kesin";
+            // dangerouslySetInnerHTML: yalnızca __html değerine saldırgan-kontrollü
+            // (tainted) veri akıyorsa XSS. Statik literal / JSON-LD / sanitize'lı
+            // içerik FP'dir — veri-akışını izle.
+            // Yorum satırındaki `dangerouslySetInnerHTML` bahsi → sink değil, ele.
+            if (/^\s*(\*|\/\/|\/\*)/.test(raw)) continue;
+            const ctxWin = lines
+              .slice(Math.max(0, i - 1), i + 6)
+              .join("\n");
+            // 1) JSON-LD structured data → React'ta standart, HTML-context değil.
+            if (/application\/ld\+json/i.test(ctxWin)) continue;
+            // 2) __html değerini çıkar. Bulunmazsa gerçek bir sink değildir → ele.
+            const hm = /__html\s*:\s*([\s\S]{0,240}?)(?:\}\s*\}|,\s*\n\s*\}|$)/.exec(
+              ctxWin,
+            );
+            if (!hm) continue;
+            const valExpr = hm[1].trim();
+            if (!valExpr) continue;
+            // 3) JSON.stringify(sabit) → HTML-context değil, güvenli serileştirme.
+            const isJsonStringify = /^JSON\.stringify\s*\(/.test(valExpr);
+            // 4) Değer bir string/template literal ile başlıyor ve interpolasyon
+            //    (${...}) içermiyorsa tamamen statik içeriktir (truncate edilmiş olsa da).
+            const isStaticLiteral =
+              /^["'`]/.test(valExpr) && !/\$\{/.test(valExpr);
+            // 5) HTML-güvenli sanitize/escape uygulanmış.
+            const sanitized = DOM_SANITIZER.test(ctxWin);
+            if (isJsonStringify || isStaticLiteral || sanitized) {
+              // Whitelist: statik/serileştirilmiş/sanitize'lı → bildirme.
+              continue;
+            }
+            if (htmlValueTainted(valExpr, content)) {
+              // Saldırgan-kontrollü veri sink'e ulaşıyor → gerçek XSS.
+              severity = "high";
+              confidence = "kesin";
+              note =
+                " __html değerine kullanıcı/istek/DB/CMS kaynaklı veri akıyor gibi görünüyor → XSS riski.";
+            } else {
+              // Kaynak statik/repo-içi görünüyor → düşük, elle doğrula.
+              severity = "low";
+              confidence = "olası";
+              note =
+                " (Değer statik/repo-içi görünüyor — saldırgan-kontrollü veri tespit edilmedi; büyük olasılıkla güvenli.)";
+            }
           } else if (sig.kind === "cmd") {
             // child_process çoğunlukla build/araç/sunucu kodunda tasarım gereğidir.
             // Yalnızca gerçek istek/kullanıcı girdisi komuta akıyorsa (ya da

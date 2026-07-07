@@ -58,9 +58,19 @@ const skipFile = (file: string): boolean => {
   return (
     /\.env(\.example|\.sample|\.template)$/.test(f) ||
     /(test|spec|__tests__|fixtures?)/.test(f) ||
-    /\.lock$|package-lock/.test(f)
+    /\.lock$|package-lock/.test(f) ||
+    // Scrape edilmiş 3. parti HTML dump'ları / ham fixture'lar → projenin kendi
+    // secret'ı değil (ör. başka bir sitenin public browser key'i).
+    /\.html?$/i.test(f) ||
+    /(^|\/)(scraped|samples?)\//i.test(f) ||
+    /_raw\.[a-z0-9]+$/i.test(f)
   );
 };
+
+// UPPER_SNAKE_CASE bir env-var ADI mı (değeri değil)? Örn. "AGGREGATOR_WEBHOOK_SECRET".
+// Bu bir string atansa bile gerçek bir sır DEĞİL — env(...) içinde anahtar olarak kullanılır.
+const isEnvVarName = (value: string): boolean =>
+  /^[A-Z][A-Z0-9]*(_[A-Z0-9]+)+$/.test(value);
 
 export const hardcodedSecrets: StaticRule = {
   id: "a02-hardcoded-secret",
@@ -111,6 +121,9 @@ export const hardcodedSecrets: StaticRule = {
         if (m) {
           const value = m[2];
           if (PLACEHOLDER.test(raw) || PLACEHOLDER.test(value)) continue;
+          // Değer bir env-var ADI ise (UPPER_SNAKE_CASE, ör. AGGREGATOR_WEBHOOK_SECRET)
+          // bu bir sır değeri değil, config anahtarıdır → atla.
+          if (isEnvVarName(value)) continue;
           if (value.length >= 16 && shannon(value) >= 3.5) {
             const key = `${file}:${i}:entropy`;
             if (seen.has(key)) continue;

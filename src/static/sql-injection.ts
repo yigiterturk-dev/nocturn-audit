@@ -7,15 +7,23 @@ import type { StaticRule } from "../core/rule.js";
  * içine değişken (özellikle istek girdisi) gömülmüş.
  */
 
-// SELECT/INSERT/UPDATE/DELETE içeren template literal + ${...} interpolasyonu
-const SQL_TEMPLATE =
-  /(SELECT|INSERT\s+INTO|UPDATE|DELETE\s+FROM|WHERE|FROM)\b[\s\S]{0,120}\$\{[^}]+\}/i;
-// string + değişken birleştirme ile SQL
-const SQL_CONCAT =
-  /["'`][^"'`]*(SELECT|INSERT|UPDATE|DELETE|WHERE)[^"'`]*["'`]\s*\+\s*\w+/i;
-// ham sorgu çağrıları
+// Gerçek bir SQL İFADESİ imzası (tek kelime "from"/"where" değil — çok-kelimeli
+// gerçek statement). Tailwind `from-blue-500` / JSX gibi FP'leri eler.
+const SQL_STMT =
+  /\bSELECT\b[\s\S]{0,200}?\bFROM\b|\bINSERT\s+INTO\s+["'`]?\w|\bUPDATE\s+["'`]?\w[\s\S]{0,80}?\bSET\b|\bDELETE\s+FROM\s+["'`]?\w/i;
+// ham sorgu sürücü çağrıları (parametreli olmayan).
 const RAW_QUERY =
-  /\.(query|raw|unsafe|execute|\$queryRawUnsafe|\$executeRawUnsafe)\s*\(/;
+  /\.(query|raw|unsafe|execute|prepare)\s*\(|\$queryRawUnsafe|\$executeRawUnsafe|\bknex\.raw\b|\bsql`/;
+// SQL string'ine değişken interpolasyonu/birleştirmesi.
+const SQL_INTERP = /\$\{[^}]+\}|["'`][^"'`]*\b(SELECT|INSERT|UPDATE|DELETE|WHERE|FROM)\b[^"'`]*["'`]\s*\+\s*\w/i;
+// JSX/TSX render bağlamı → SQL değil, tamamen ele.
+const JSX_CONTEXT =
+  /className=|classList|<\/?[A-Za-z][\w.]*[\s/>]|style=\{|tw`|clsx\(|cn\(|cva\(/;
+// Supabase/PostgREST ORM query builder (parametreli) → SQL-injection kapsamı dışı.
+const ORM_BUILDER =
+  /\.from\(\s*["'`]\w[\s\S]{0,200}?\.(select|eq|neq|or|and|ilike|like|gte|lte|gt|lt|in|match|contains|filter)\s*\(/i;
+// HTTP body (fetch/axios) JSON.stringify → SQL değil.
+const HTTP_BODY = /(fetch\s*\(|axios|\.post\(|\.put\(|body\s*:)/i;
 
 const INPUT_HINT =
   /(req\.|params|searchParams|query\.|body|input|formData|request\.)/;
@@ -39,13 +47,23 @@ export const sqlInjection: StaticRule = {
         const raw = lines[i];
         const window = lines.slice(i, i + 3).join("\n");
 
-        const templ = SQL_TEMPLATE.test(window);
-        const concat = SQL_CONCAT.test(window);
-        const rawUnsafe =
-          /\$(queryRawUnsafe|executeRawUnsafe)/.test(raw) ||
-          (RAW_QUERY.test(raw) && /\$\{|["'`][^"'`]*["'`]\s*\+/.test(window));
+        // JSX/TSX render bağlamı → SQL değil, ele.
+        if (JSX_CONTEXT.test(raw)) continue;
 
-        if (!templ && !concat && !rawUnsafe) continue;
+        // Gerçek SQL bağlamı olmalı: ya bir SQL statement imzası ya da ham sürücü çağrısı.
+        const hasSqlStmt = SQL_STMT.test(window);
+        const hasDriver = RAW_QUERY.test(raw);
+        const rawUnsafe = /\$(queryRawUnsafe|executeRawUnsafe)/.test(raw);
+        const hasInterp = SQL_INTERP.test(window);
+
+        // İnterpolasyon/birleştirme veya ham-unsafe çağrı olmadan SQLi olmaz.
+        if (!rawUnsafe && !hasInterp) continue;
+        // SQL bağlamı doğrulanmadıysa (statement imzası ya da sürücü çağrısı) ele.
+        if (!rawUnsafe && !hasSqlStmt && !hasDriver) continue;
+        // Supabase/PostgREST ORM builder → parametreli, ele.
+        if (ORM_BUILDER.test(window)) continue;
+        // Ham SQL değil de HTTP body (fetch/axios) JSON.stringify ise ele.
+        if (!hasSqlStmt && !hasDriver && HTTP_BODY.test(window)) continue;
 
         // parametreli değilse ve girdi ihtimali varsa daha kritik
         const inputNear = INPUT_HINT.test(
@@ -55,9 +73,9 @@ export const sqlInjection: StaticRule = {
           ruleId: this.id,
           title: this.title,
           owasp: this.owasp,
-          // Sezgisel kural: yalnızca kullanıcı girdisi sorguya aktığında (kanıt
-          // güçlendiğinde) yüksek; aksi halde orta seviyede tut.
-          severity: inputNear ? "high" : "medium",
+          // Sezgisel kural: yalnızca kullanıcı girdisi ham SQL'e aktığında yüksek;
+          // aksi halde düşük (korroborasyonsuz sezgisel → düşük).
+          severity: inputNear ? "high" : "low",
           description: inputNear
             ? "SQL sorgusu string/template ile oluşturuluyor ve yakında kullanıcı girdisi (req/params/body/query) var. Parametreleştirme yoksa doğrudan SQL enjeksiyonu mümkün."
             : "SQL sorgusu string birleştirme/template ile oluşturuluyor. Değişken interpolasyonu enjeksiyon riski taşır; parametreli sorgu kullanılmalı.",

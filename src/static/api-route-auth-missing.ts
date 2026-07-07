@@ -30,7 +30,7 @@ const AUTH_HINTS = [
   /authorization/i,
   /CRON_SECRET/,
   /process\.env\.\w*(SECRET|TOKEN|API_KEY)\b[\s\S]{0,80}(===|==|!==|!=|includes|timingSafeEqual)/i,
-  /isAdmin|isAuthenticated|requireAuth|ensureAuth|checkAuth|guard/i,
+  /isAdmin|isAuthenticated|isAuthorized|authorize\b|requireAuth|requireAdmin|requireUser|requireGate|ensureAuth|checkAuth|guard/i,
 ];
 
 // Handler'da DB'ye dokunulduğuna dair işaretler — bu olmadan route büyük olasılıkla
@@ -46,9 +46,44 @@ const isApiRoute = (file: string): boolean => {
   );
 };
 
+// Auth ÜRETEN (tüketmeyen) sınır route'ları — login/register/callback vb. tasarımı
+// gereği public olmalı; burada auth aramak yanlış.
+const isAuthBoundaryRoute = (file: string): boolean => {
+  const f = file.replace(/\\/g, "/").toLowerCase();
+  return /\/(login|log-in|signin|sign-in|register|signup|sign-up|logout|sign-out|forgot-password|reset-password|verify-email|magic-link|callback|oauth)\b/.test(
+    f,
+  );
+};
+
+// Public form ucu mu? rate-limit + input validation var VE yalnızca insert/notify
+// yapıyor (kullanıcıya-ait kaynak okumuyor) → lead/newsletter/iletişim formu.
+const looksLikePublicForm = (content: string): boolean => {
+  const hasRateLimit =
+    /rateLimit|rate_limit|enforceWriteLimit|ratelimit|Ratelimit|limiter\.|@upstash\/ratelimit|checkRateLimit/i.test(
+      content,
+    );
+  // Zod/yup/joi ŞEMA doğrulaması VEYA elle giriş doğrulaması / double opt-in sinyalleri.
+  const hasValidation =
+    /\.safeParse\(|z\.object\(|zodResolver|yup\.|joi\.|\.parse\(|EMAIL_RE|signOptIn|opt-?in|double[_-]?opt|confirmation|sanitize|\bvalidate\b|RE\.test\(/i.test(
+      content,
+    );
+  // Yalnızca insert/upsert/create yapıyor (kullanıcıya-ait kaynak okumuyor).
+  const insertOnly = /\.(create|upsert|insert|createMany)\s*\(/i.test(content);
+  // Kullanıcıya-ait kaynak OKUMA (ownership yüzeyi) yoksa güvenli-public sayılır.
+  const readsUserData =
+    /\.(findUnique|findFirst|findMany)\s*\(|\.select\s*\([\s\S]{0,60}(user_id|owner)/i.test(
+      content,
+    );
+  return hasRateLimit && hasValidation && insertOnly && !readsUserData;
+};
+
 // Konvansiyonel olarak public olan route'lar — auth beklenmez, FP üretmeyelim.
 const isPublicByConvention = (file: string, content: string): boolean => {
   const f = file.replace(/\\/g, "/").toLowerCase();
+  // Auth sınırı (login/register/callback) → public zorunlu.
+  if (isAuthBoundaryRoute(file)) return true;
+  // rate-limit + validation'lı public form (lead/newsletter/iletişim).
+  if (looksLikePublicForm(content)) return true;
   // Sağlık/durum, sitemap/robots/manifest, og/görsel uçları.
   if (/\/(health|healthz|status|ping|readyz|livez)\//.test(f)) return true;
   if (/\/(sitemap|robots|manifest)\b/.test(f)) return true;
@@ -112,8 +147,9 @@ export const apiRouteAuthMissing: StaticRule = {
         ruleId: this.id,
         title: this.title,
         owasp: this.owasp,
-        // Yalnızca DB'ye YAZAN (mutation) korumasız handler yüksek; salt-okuma orta.
-        severity: isMutation ? "high" : "medium",
+        // Yalnızca DB'ye YAZAN (mutation) korumasız handler yüksek; salt-okuma (public
+        // olabilir) düşük — kesin IDOR/leak kanıtı olmadan yükseltmiyoruz.
+        severity: isMutation ? "high" : "low",
         confidence: "olası",
         description: isMutation
           ? "Bu API route veritabanına yazan bir mutation handler (POST/PUT/PATCH/DELETE) tanımlıyor ama içinde tanınabilir bir auth/oturum kontrolü yok. Yetkisiz veri değişikliğine açık olabilir."

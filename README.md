@@ -52,9 +52,35 @@ npx nocturn-audit scan --live-only   # sadece canlı HTTP problar
 npx nocturn-audit scan --no-deps     # npm audit adımını atla
 npx nocturn-audit list               # kayıtlı projeleri göster
 npx nocturn-audit rules              # aktif kural setini göster
+npx nocturn-audit standards          # Nocturn Standartları kontrol listesini göster
+npx nocturn-audit standards <proje>  # standart profili çalıştır (rapor dosyası YAZMAZ)
 ```
 
-Ek bayraklar: `-t <path>` (özel targets.json), `-v` (tüm bulguları terminalde göster).
+Ek bayraklar: `-t <path>` (özel targets.json), `-v` (tüm bulguları terminalde göster),
+`--no-standards` (scan sırasında standart profilini atla).
+
+## Nocturn Standartları profili
+
+OWASP kurallarından ayrı, "bu proje benim güvenlik + hız standartlarıma uyuyor mu"
+sorusuna cevap veren checklist profili. Her `scan` (statik içeren) çalışmasında
+otomatik koşar ve JSON rapora proje başına `standards` bloğu ekler
+(OWASP bulgu sayımlarına ve risk skoruna DAHİL DEĞİLDİR).
+
+- **Güvenlik** (kaynak: feedback_security): rate limit altyapısı, API auth guard,
+  .env koruması (gitignore + commit), gömülü secret, güvenlik header'ları
+  (next.config/vercel.json/middleware), Supabase RLS izi, input validation.
+- **Hız** (kaynak: feedback_hiz_standardi / crm-v2 1.47s→0.26s vakası): Vercel
+  bölge sabitleme, sayfa başına ardışık await zinciri (sezgisel), loading.tsx
+  iskeletleri, `select *` daraltma.
+
+Her kontrol **her zaman** bir sonuç üretir: `gecti` / `kaldi` / `manuel`
+(sezgisel sinyal — elle doğrula, skoru DÜŞÜRMEZ) / `uygulanamaz`. Skor 0-100
+(yüksek = iyi): kaldı-kritik −25, kaldı-uyarı −10, kaldı-bilgi −3.
+Kesin olmayan sezgiseller (auth guard, await zinciri, RLS) asla "kaldı" olarak
+işaretlenmez — yanlış pozitif skora yansımaz.
+
+`standards <proje>` komutu rapor dosyası yazmaz (günlük güvenlik raporunun
+üzerine yazıp konsol geçmişini kirletmemek için); kritik "kaldı" varsa `exit 1`.
 
 ## Rapor
 

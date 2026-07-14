@@ -17,6 +17,8 @@ import type {
   Rule,
   StaticContext,
 } from "./rule.js";
+import { runStandards } from "../standards/index.js";
+import type { StandardsResult } from "../standards/types.js";
 
 export interface ProjectReport {
   project: Project;
@@ -34,6 +36,12 @@ export interface ProjectReport {
   rulesRun: string[];
   /** Atlanan sebep (varsa). */
   notes: string[];
+  /**
+   * "Nocturn Standartları" profili sonucu (güvenlik + hız checklist'i).
+   * Statik tarama yapıldığında üretilir. Geriye-uyumlu, opsiyonel ek alan —
+   * OWASP bulgu sayımlarına ve risk skoruna DAHİL DEĞİLDİR.
+   */
+  standards?: StandardsResult;
 }
 
 export interface ScanOptions {
@@ -43,6 +51,8 @@ export interface ScanOptions {
   liveOnly?: boolean;
   /** Deps kuralları çalışsın mı (varsayılan: staticOnly/liveOnly değilse evet). */
   includeDeps?: boolean;
+  /** Nocturn Standartları profili çalışsın mı (varsayılan: statik tarama varsa evet). */
+  includeStandards?: boolean;
 }
 
 const SOURCE_GLOBS = [
@@ -301,6 +311,7 @@ export async function scanProject(
   }
 
   // --- Statik kurallar
+  let standards: StandardsResult | undefined;
   if (runStatic && existsSync(root)) {
     const tracked = collectTrackedFiles(root);
     const ctx = buildStaticContext(project, root, files, tracked);
@@ -319,6 +330,19 @@ export async function scanProject(
       } catch (err) {
         notes.push(
           `Kural ${rule.id} hata verdi: ${
+            err instanceof Error ? err.message : String(err)
+          }`,
+        );
+      }
+    }
+
+    // --- Nocturn Standartları profili (güvenlik + hız checklist'i)
+    if (options.includeStandards ?? true) {
+      try {
+        standards = await runStandards(ctx);
+      } catch (err) {
+        notes.push(
+          `Standart profili hata verdi: ${
             err instanceof Error ? err.message : String(err)
           }`,
         );
@@ -393,6 +417,7 @@ export async function scanProject(
     score: riskScore(counts),
     rulesRun,
     notes,
+    standards,
   };
 }
 

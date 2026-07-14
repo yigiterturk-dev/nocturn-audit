@@ -32,6 +32,11 @@ export interface JsonReport {
     rulesRun: string[];
     notes: string[];
     findings: ProjectReport["findings"];
+    /**
+     * Nocturn Standartları profili (güvenlik + hız checklist'i).
+     * Geriye-uyumlu, opsiyonel ek alan — eski tüketiciler yok sayar.
+     */
+    standards?: ProjectReport["standards"];
   }>;
 }
 
@@ -78,6 +83,7 @@ export function buildJson(reports: ProjectReport[]): JsonReport {
       rulesRun: r.rulesRun,
       notes: r.notes,
       findings: r.findings,
+      standards: r.standards,
     })),
   };
 }

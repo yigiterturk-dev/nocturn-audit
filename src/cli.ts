@@ -8,7 +8,8 @@ import pc from "picocolors";
 import { loadRegistry, findProject } from "./registry.js";
 import { scanProject, hasCritical, type ProjectReport } from "./core/engine.js";
 import { allRules } from "./rules.js";
-import { printReport } from "./report/terminal.js";
+import { printReport, printStandards } from "./report/terminal.js";
+import { standardsChecks } from "./standards/index.js";
 import { writeHtmlReport } from "./report/html.js";
 import { writeJsonReport } from "./report/json.js";
 import { SEVERITY_ORDER } from "./core/severity.js";
@@ -45,6 +46,7 @@ program
   .option("--static", "yalnızca statik kod taraması (canlıya dokunma)")
   .option("--live-only", "yalnızca canlı HTTP problar")
   .option("--no-deps", "npm audit adımını atla")
+  .option("--no-standards", "Nocturn Standartları profilini atla")
   .option("-t, --targets <path>", "targets.json yolu")
   .option("-v, --verbose", "tüm bulguları terminalde göster")
   .action(async (projectName, opts) => {
@@ -80,6 +82,7 @@ program
       liveOnly: opts.liveOnly === true,
       includeDeps:
         opts.deps === false ? false : opts.static || opts.liveOnly ? false : true,
+      includeStandards: opts.standards !== false,
     };
 
     if (scanOpts.staticOnly && scanOpts.liveOnly) {
@@ -156,6 +159,69 @@ program
       );
     }
     console.log("");
+  });
+
+program
+  .command("standards")
+  .description(
+    "Nocturn Standartları profili — güvenlik + hız checklist'i (yalnızca statik, rapor dosyası YAZMAZ)",
+  )
+  .argument("[project]", "bu projeyi denetle (isim); verilmezse kontrol listesi gösterilir")
+  .option("-t, --targets <path>", "targets.json yolu")
+  .action(async (projectName, opts) => {
+    // Proje verilmemişse: aktif kontrol setini listele.
+    if (!projectName) {
+      console.log("");
+      console.log(pc.bold(`  Nocturn Standartları — aktif kontroller (${standardsChecks.length})`));
+      console.log(pc.dim("  ───────────────────────────────────────────"));
+      for (const cat of ["guvenlik", "hiz"] as const) {
+        console.log("");
+        console.log(pc.yellow(cat === "guvenlik" ? "  GÜVENLİK" : "  HIZ"));
+        for (const c of standardsChecks.filter((x) => x.category === cat)) {
+          const lvl =
+            c.level === "kritik" ? pc.red("kritik") : c.level === "uyari" ? pc.yellow("uyarı ") : pc.dim("bilgi ");
+          console.log(`    ${lvl} ${pc.dim(c.id.padEnd(28))} ${c.title}`);
+        }
+      }
+      console.log("");
+      console.log(pc.dim("  Bir projede çalıştırmak için: nocturn-audit standards <proje>"));
+      console.log("");
+      return;
+    }
+
+    const tPath = targetsPath(opts.targets);
+    if (!existsSync(tPath)) {
+      console.error(pc.red(`targets.json bulunamadı: ${tPath}`));
+      process.exit(2);
+    }
+    const projects = loadRegistry(tPath);
+    const p = findProject(projects, projectName);
+    if (!p) {
+      console.error(
+        pc.red(`Proje bulunamadı: ${projectName}`) +
+          pc.dim(`\nKayıtlı: ${projects.map((x) => x.name).join(", ")}`),
+      );
+      process.exit(2);
+    }
+
+    // Yalnızca standart profili: OWASP kuralları boş, deps/canlı kapalı.
+    // Rapor dosyası YAZILMAZ — günlük güvenlik raporunun üzerine yazıp
+    // konsolun bulgu geçmişini kirletmemek için (bkz. Nocturn Console).
+    const report = await scanProject(p, [], {
+      staticOnly: true,
+      includeDeps: false,
+      includeStandards: true,
+    });
+    for (const note of report.notes) console.log(pc.dim(`  · ${note}`));
+    if (!report.standards) {
+      console.error(pc.red("Standart profili üretilemedi (proje yolu bulunamadı olabilir)."));
+      process.exit(2);
+    }
+    printStandards(p.name, report.standards);
+    const kritikKaldi = report.standards.checks.some(
+      (c) => c.status === "kaldi" && c.level === "kritik",
+    );
+    process.exit(kritikKaldi ? 1 : 0);
   });
 
 program

@@ -2,6 +2,7 @@ import pc from "picocolors";
 import type { ProjectReport } from "../core/engine.js";
 import type { Finding } from "../core/finding.js";
 import { SEVERITY_ORDER, type Severity } from "../core/severity.js";
+import type { StandardsCheckResult, StandardsResult } from "../standards/types.js";
 
 const sevColor = (s: Severity, text: string): string => {
   switch (s) {
@@ -102,6 +103,23 @@ export function printReport(reports: ProjectReport[], verbose = false): void {
     if (findings.length === 0) {
       console.log(pc.green("     ✓ bulgu yok"));
     }
+
+    // Nocturn Standartları özeti (güvenlik + hız checklist'i)
+    if (r.standards) {
+      const s = r.standards;
+      const scoreCol =
+        s.score >= 80 ? pc.green : s.score >= 60 ? pc.yellow : pc.red;
+      console.log(
+        pc.dim("     standartlar: ") +
+          scoreCol(`skor ${s.score}`) +
+          pc.dim(
+            ` (güvenlik ${s.categories.guvenlik.score} · hız ${s.categories.hiz.score})  ` +
+              `${s.counts.gecti} geçti · `,
+          ) +
+          (s.counts.kaldi ? pc.red(`${s.counts.kaldi} kaldı`) : pc.dim("0 kaldı")) +
+          pc.dim(` · ${s.counts.manuel} manuel · ${s.counts.uygulanamaz} n/a`),
+      );
+    }
   }
 
   console.log("");
@@ -129,5 +147,59 @@ export function printReport(reports: ProjectReport[], verbose = false): void {
   console.log(
     `  Toplam risk skoru: ${pc.bold(String(totalScore))}   ${verdict}`,
   );
+  console.log("");
+}
+
+// ---- Nocturn Standartları detay çıktısı (standards komutu) ----
+
+const statusTag = (c: StandardsCheckResult): string => {
+  switch (c.status) {
+    case "gecti":
+      return pc.green("✓ GEÇTİ  ");
+    case "kaldi":
+      return c.level === "kritik"
+        ? pc.bgRed(pc.white(" ✗ KALDI "))
+        : pc.red("✗ KALDI  ");
+    case "manuel":
+      return pc.yellow("? MANUEL ");
+    case "uygulanamaz":
+      return pc.dim("- N/A    ");
+  }
+};
+
+const levelTag = (l: StandardsCheckResult["level"]): string =>
+  l === "kritik" ? pc.red("kritik") : l === "uyari" ? pc.yellow("uyarı ") : pc.dim("bilgi ");
+
+export function printStandards(projectName: string, s: StandardsResult): void {
+  console.log("");
+  console.log(
+    pc.bold(pc.magenta("  nocturn-audit")) +
+      pc.dim(" — Nocturn Standartları · ") +
+      pc.bold(projectName),
+  );
+  console.log(pc.dim("  ─────────────────────────────────────────────"));
+  const scoreCol = s.score >= 80 ? pc.green : s.score >= 60 ? pc.yellow : pc.red;
+  console.log(
+    `  Skor: ${scoreCol(pc.bold(String(s.score)))}   ` +
+      pc.dim(`güvenlik ${s.categories.guvenlik.score} · hız ${s.categories.hiz.score}   `) +
+      pc.dim(
+        `${s.counts.gecti} geçti · ${s.counts.kaldi} kaldı · ${s.counts.manuel} manuel · ${s.counts.uygulanamaz} n/a`,
+      ),
+  );
+  for (const cat of ["guvenlik", "hiz"] as const) {
+    console.log("");
+    console.log(pc.yellow(cat === "guvenlik" ? "  GÜVENLİK" : "  HIZ"));
+    for (const c of s.checks.filter((x) => x.category === cat)) {
+      console.log(`   ${statusTag(c)} ${levelTag(c.level)} ${pc.bold(c.title)} ${pc.dim(`(${c.id})`)}`);
+      console.log(pc.dim(`            ${c.detail}`));
+      if (c.status === "kaldi" || c.status === "manuel") {
+        const ev = c.evidence[0];
+        if (ev?.kind === "file" && ev.file) {
+          console.log(pc.dim(`            kanıt: ${ev.file}:${ev.line ?? 1}${ev.snippet ? ` → ${ev.snippet}` : ""}`));
+        }
+        console.log(pc.cyan(`            düzeltme: `) + pc.dim(c.remediation));
+      }
+    }
+  }
   console.log("");
 }

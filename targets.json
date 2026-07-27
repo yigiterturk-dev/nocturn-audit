@@ -11,21 +11,60 @@
       "path": "~/Desktop/Web Siteleri/emlakakli",
       "url": "https://emlakakli.vercel.app",
       "owned": false,
-      "stack": { "framework": "next", "db": "supabase", "auth": "clerk" }
+      "stack": {
+        "framework": "next",
+        "db": "supabase",
+        "auth": "clerk"
+      }
     },
     {
       "name": "rehberex",
       "path": "~/Desktop/niye/rehberex",
       "url": "https://rehberex.vercel.app",
       "owned": false,
-      "stack": { "framework": "next" }
+      "stack": {
+        "framework": "next"
+      }
     },
     {
       "name": "hukuk-ai",
       "path": "~/Desktop/hukuk-ai",
       "url": "https://lexordo.vercel.app",
       "owned": false,
-      "stack": { "framework": "next", "db": "postgres" }
+      "stack": {
+        "framework": "next",
+        "db": "postgres"
+      }
+    },
+    {
+      "name": "mind",
+      "path": "~/Desktop/Aktif Projeler/mind",
+      "owned": false
+    },
+    {
+      "name": "nocturn-console",
+      "path": "~/Desktop/nocturn-console",
+      "owned": false
+    },
+    {
+      "name": "crm-v2-stock",
+      "path": "~/Desktop/CRM/crm-v2-stock",
+      "owned": false
+    },
+    {
+      "name": "adintelligence",
+      "path": "~/Desktop/Aktif Projeler/adintelligence",
+      "owned": false
+    },
+    {
+      "name": "mailpilot",
+      "path": "~/Desktop/Aktif Projeler/mailpilot",
+      "owned": false
+    },
+    {
+      "name": "nocturndev-v3",
+      "path": "~/Desktop/Web Siteleri/nocturndev-v3",
+      "owned": false
     }
   ]
 }

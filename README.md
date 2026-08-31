@@ -6,8 +6,15 @@ OWASP Top 10 (2021) mapped. Detection and reporting only — no exploitation,
 no DoS, no evasion.
 
 ```bash
-npx github:yigiterturk-dev/nocturn-audit init   # create targets.json
-npx github:yigiterturk-dev/nocturn-audit scan   # scan it
+npx nocturn-audit scan .        # scan the folder you are standing in
+```
+
+No config file, no account, no network call. To track several projects over
+time, register them once:
+
+```bash
+npx nocturn-audit init          # write a targets.json
+npx nocturn-audit scan          # scan everything in it
 ```
 
 ## Why another scanner
@@ -52,16 +59,22 @@ instead of quietly reading as clean.
 
 ## Install
 
-Run it straight from this repository — nothing to install:
+Nothing to install — `npx` is enough:
 
 ```bash
-npx github:yigiterturk-dev/nocturn-audit init
+npx nocturn-audit scan .
 ```
 
-Pin a version with a tag, which is what you want in CI:
+Pin a version in CI, which is what you want there:
 
 ```bash
-npx github:yigiterturk-dev/nocturn-audit#v0.1.0 scan --static
+npx nocturn-audit@0.1.0 scan --static
+```
+
+Or install it as a dev dependency:
+
+```bash
+npm i -D nocturn-audit
 ```
 
 Or clone and link it:

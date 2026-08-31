@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 import { dirname } from "node:path";
 import { Command } from "commander";
 import pc from "picocolors";
-import { loadRegistry, findProject } from "./registry.js";
+import { loadRegistry, findProject, projeDizinden, dizinGibiMi } from "./registry.js";
 import { scanProject, hasCritical, type ProjectReport } from "./core/engine.js";
 import { analyzeFindingWithLLM } from "./core/llm.js";
 import { allRules } from "./rules.js";
@@ -70,31 +70,55 @@ program
   .option("-v, --verbose", "print every finding to the terminal")
   .option("--ai", "triage findings with an LLM (high/critical only)")
   .action(async (projectName, opts) => {
+    /*
+      A PATH beats the registry. `scan .` and `scan ~/code/app` are what a
+      first-time user types, and they used to die on "targets.json not
+      found" -- a file inside the installed package. The registry is for
+      tracking many projects over time, not the price of one scan.
+    */
     const tPath = targetsPath(opts.targets);
-    if (!existsSync(tPath)) {
-      console.error(
-        pc.red(`targets.json not found: ${tPath}\n`) +
-          pc.dim("See targets.example.json for the format, or pass a path with -t."),
+    let projects: ReturnType<typeof loadRegistry>;
+
+    if (projectName && dizinGibiMi(projectName)) {
+      try {
+        projects = [projeDizinden(projectName)];
+      } catch (err) {
+        console.error(pc.red(err instanceof Error ? err.message : String(err)));
+        process.exit(2);
+      }
+    } else if (!projectName && !existsSync(tPath)) {
+      // No argument and no registry: scan where the user is standing.
+      projects = [projeDizinden(process.cwd())];
+      console.log(
+        pc.dim(`No targets.json — scanning the current directory (${projects[0].path}).`) +
+          pc.dim("\nRun `nocturn-audit init` to track this project.\n"),
       );
-      process.exit(2);
-    }
-
-    let projects = loadRegistry(tPath);
-    if (projects.length === 0) {
-      console.error(pc.red("targets.json contains no projects."));
-      process.exit(2);
-    }
-
-    if (projectName) {
-      const p = findProject(projects, projectName);
-      if (!p) {
+    } else {
+      if (!existsSync(tPath)) {
         console.error(
-          pc.red(`Project not found: ${projectName}`) +
-            pc.dim(`\nRegistered: ${projects.map((x) => x.name).join(", ")}`),
+          pc.red(`targets.json not found: ${tPath}\n`) +
+            pc.dim("Pass a directory (`nocturn-audit scan .`), run `nocturn-audit init`, or point at a file with -t."),
         );
         process.exit(2);
       }
-      projects = [p];
+
+      projects = loadRegistry(tPath);
+      if (projects.length === 0) {
+        console.error(pc.red("targets.json contains no projects."));
+        process.exit(2);
+      }
+
+      if (projectName) {
+        const p = findProject(projects, projectName);
+        if (!p) {
+          console.error(
+            pc.red(`Project not found: ${projectName}`) +
+              pc.dim(`\nRegistered: ${projects.map((x) => x.name).join(", ")}`),
+          );
+          process.exit(2);
+        }
+        projects = [p];
+      }
     }
 
     const scanOpts = {

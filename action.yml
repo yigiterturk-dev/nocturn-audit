@@ -1,0 +1,45 @@
+name: "nocturn-audit"
+description: "Run a nocturn-audit security scan and fail the build on critical findings."
+branding:
+  icon: "shield"
+  color: "purple"
+
+inputs:
+  version:
+    description: "Git ref (tag, branch or commit) of nocturn-audit to run."
+    required: false
+    default: "v0"
+  targets:
+    description: "Path to targets.json. If it does not exist, one is generated for the checked-out repository."
+    required: false
+    default: "targets.json"
+  args:
+    description: "Extra arguments passed to `nocturn-audit scan` (e.g. --static)."
+    required: false
+    default: "--static"
+  upload-report:
+    description: "Upload the HTML/JSON report as a workflow artifact."
+    required: false
+    default: "true"
+
+runs:
+  using: "composite"
+  steps:
+    - name: Ensure targets.json
+      shell: bash
+      run: |
+        if [ ! -f "${{ inputs.targets }}" ]; then
+          npx --yes "github:yigiterturk-dev/nocturn-audit#${{ inputs.version }}" init --targets "${{ inputs.targets }}"
+        fi
+
+    - name: Scan
+      shell: bash
+      run: npx --yes "github:yigiterturk-dev/nocturn-audit#${{ inputs.version }}" scan --targets "${{ inputs.targets }}" ${{ inputs.args }}
+
+    - name: Upload report
+      if: ${{ always() && inputs.upload-report == 'true' }}
+      uses: actions/upload-artifact@v4
+      with:
+        name: nocturn-audit-report
+        path: report/
+        if-no-files-found: ignore

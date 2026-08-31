@@ -1,0 +1,73 @@
+{
+  "name": "nocturn-audit",
+  "version": "0.1.0",
+  "description": "Security audit CLI with measured precision: OWASP Top 10 rules, a synthetic canary for recall, and a CI gate that stops precision from regressing.",
+  "type": "module",
+  "bin": {
+    "nocturn-audit": "dist/cli.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "prepare": "npm run build",
+    "dev": "tsc -w -p tsconfig.json",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "start": "node dist/cli.js",
+    "precision": "node dist/cli.js precision",
+    "precision:ci": "node dist/cli.js precision --ci",
+    "denetim": "npm run build --silent && node dist/cli.js scan",
+    "denetim:proje": "npm run build --silent && node dist/cli.js scan",
+    "denetim:hizli": "npm run build --silent && node dist/cli.js scan --static",
+    "fark": "node dist/cli.js fark",
+    "yeni-kural": "npm run build --silent && node dist/cli.js yeni-kural",
+    "new-rule": "npm run build --silent && node dist/cli.js new-rule",
+    "diff": "node dist/cli.js diff",
+    "audit": "npm run build --silent && node dist/cli.js scan",
+    "verify": "npm run build --silent && npm test --silent && node dist/cli.js precision --ci"
+  },
+  "dependencies": {
+    "commander": "^12.1.0",
+    "dotenv": "^17.4.2",
+    "fast-glob": "^3.3.2",
+    "picocolors": "^1.1.0",
+    "typescript": "^5.5.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.0",
+    "vitest": "^2.1.0"
+  },
+  "license": "MIT",
+  "author": "Yiğit Ertürk <sales@nocturndev.com>",
+  "homepage": "https://github.com/yigiterturk-dev/nocturn-audit#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/yigiterturk-dev/nocturn-audit.git"
+  },
+  "bugs": {
+    "url": "https://github.com/yigiterturk-dev/nocturn-audit/issues"
+  },
+  "keywords": [
+    "security",
+    "sast",
+    "owasp",
+    "audit",
+    "pentest",
+    "static-analysis",
+    "cli",
+    "nextjs",
+    "supabase",
+    "ci",
+    "secrets",
+    "vulnerability-scanner"
+  ],
+  "files": [
+    "dist",
+    "targets.example.json",
+    "README.md",
+    "LICENSE"
+  ],
+  "private": true
+}

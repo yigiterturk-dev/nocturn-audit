@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 import { dirname } from "node:path";
 import { Command } from "commander";
 import pc from "picocolors";
-import { loadRegistry, findProject, projeDizinden, dizinGibiMi } from "./registry.js";
+import { loadRegistry, findProject } from "./registry.js";
 import { scanProject, hasCritical, type ProjectReport } from "./core/engine.js";
 import { analyzeFindingWithLLM } from "./core/llm.js";
 import { allRules } from "./rules.js";
@@ -14,6 +14,7 @@ import { printReport, printStandards } from "./report/terminal.js";
 import { standardsChecks } from "./standards/index.js";
 import { writeHtmlReport } from "./report/html.js";
 import { writeJsonReport } from "./report/json.js";
+import { writeSarifReport } from "./report/sarif.js";
 import { SEVERITY_ORDER } from "./core/severity.js";
 import { runInvariants } from "./invariants.js";
 import {
@@ -69,56 +70,33 @@ program
   .option("-t, --targets <path>", "path to targets.json")
   .option("-v, --verbose", "print every finding to the terminal")
   .option("--ai", "triage findings with an LLM (high/critical only)")
+  .option("-c, --concurrency <n>", "scan up to N projects in parallel (default 1)", "1")
   .action(async (projectName, opts) => {
-    /*
-      A PATH beats the registry. `scan .` and `scan ~/code/app` are what a
-      first-time user types, and they used to die on "targets.json not
-      found" -- a file inside the installed package. The registry is for
-      tracking many projects over time, not the price of one scan.
-    */
     const tPath = targetsPath(opts.targets);
-    let projects: ReturnType<typeof loadRegistry>;
-
-    if (projectName && dizinGibiMi(projectName)) {
-      try {
-        projects = [projeDizinden(projectName)];
-      } catch (err) {
-        console.error(pc.red(err instanceof Error ? err.message : String(err)));
-        process.exit(2);
-      }
-    } else if (!projectName && !existsSync(tPath)) {
-      // No argument and no registry: scan where the user is standing.
-      projects = [projeDizinden(process.cwd())];
-      console.log(
-        pc.dim(`No targets.json — scanning the current directory (${projects[0].path}).`) +
-          pc.dim("\nRun `nocturn-audit init` to track this project.\n"),
+    if (!existsSync(tPath)) {
+      console.error(
+        pc.red(`targets.json not found: ${tPath}\n`) +
+          pc.dim("See targets.example.json for the format, or pass a path with -t."),
       );
-    } else {
-      if (!existsSync(tPath)) {
+      process.exit(2);
+    }
+
+    let projects = loadRegistry(tPath);
+    if (projects.length === 0) {
+      console.error(pc.red("targets.json contains no projects."));
+      process.exit(2);
+    }
+
+    if (projectName) {
+      const p = findProject(projects, projectName);
+      if (!p) {
         console.error(
-          pc.red(`targets.json not found: ${tPath}\n`) +
-            pc.dim("Pass a directory (`nocturn-audit scan .`), run `nocturn-audit init`, or point at a file with -t."),
+          pc.red(`Project not found: ${projectName}`) +
+            pc.dim(`\nRegistered: ${projects.map((x) => x.name).join(", ")}`),
         );
         process.exit(2);
       }
-
-      projects = loadRegistry(tPath);
-      if (projects.length === 0) {
-        console.error(pc.red("targets.json contains no projects."));
-        process.exit(2);
-      }
-
-      if (projectName) {
-        const p = findProject(projects, projectName);
-        if (!p) {
-          console.error(
-            pc.red(`Project not found: ${projectName}`) +
-              pc.dim(`\nRegistered: ${projects.map((x) => x.name).join(", ")}`),
-          );
-          process.exit(2);
-        }
-        projects = [p];
-      }
+      projects = [p];
     }
 
     const scanOpts = {
@@ -142,10 +120,17 @@ program
       ),
     );
 
+    const concurrency = Math.max(1, parseInt(opts.concurrency, 10) || 1);
     const reports: ProjectReport[] = [];
-    for (const project of projects) {
-      process.stdout.write(pc.dim(`  → ${project.name} … `));
-      const report = await scanProject(project, allRules, scanOpts);
+    // A bounded worker pool: projects are scanned in parallel up to the
+    // concurrency limit, but the report order stays the input order.
+    let cursor = 0;
+    const worker = async (): Promise<void> => {
+      while (cursor < projects.length) {
+        const idx = cursor++;
+        const project = projects[idx];
+        process.stdout.write(pc.dim(`  → ${project.name} … `));
+        const report = await scanProject(project, allRules, scanOpts);
       
       if (opts.ai && report.findings.length > 0) {
         process.stdout.write(pc.yellow(`\n    [LLM] triaging high-risk findings...\n`));
@@ -179,13 +164,17 @@ program
       report.findings.sort(
         (a, b) => SEVERITY_ORDER[a.severity] - SEVERITY_ORDER[b.severity],
       );
-      reports.push(report);
+      reports[idx] = report;
       console.log(
         pc.dim(
           `\n    Result: ${report.findings.length} finding(s) (${report.counts.critical}C/${report.counts.high}H · certain ${report.certainCounts.critical}C/${report.certainCounts.high}H)`,
         ),
       );
-    }
+      }
+    };
+    await Promise.all(
+      Array.from({ length: Math.min(concurrency, projects.length) }, worker),
+    );
 
     printReport(reports, opts.verbose === true);
 
@@ -193,10 +182,14 @@ program
     const stamp = dateStamp();
     const htmlPath = join(process.cwd(), "report", `${stamp}.html`);
     const jsonPath = join(process.cwd(), "report", `${stamp}.json`);
+    const sarifPath = join(process.cwd(), "report", `${stamp}.sarif`);
     writeHtmlReport(reports, htmlPath, stamp);
     writeJsonReport(reports, jsonPath);
+    writeSarifReport(reports, sarifPath);
     console.log(pc.dim(`  Report: ${htmlPath}`));
-    console.log(pc.dim(`        ${jsonPath}\n`));
+    console.log(pc.dim(`        ${jsonPath}`));
+    console.log(pc.dim(`        ${sarifPath}  (SARIF — GitHub Code Scanning / GitLab SAST)`));
+    console.log(pc.dim(`        Upload: gh api -X POST repos/{owner}/{repo}/code-scanning/sarifs -f input_file=${sarifPath}\n`));
 
     if (hasCritical(reports)) {
       console.log(pc.red("  Critical findings present → exit 1"));

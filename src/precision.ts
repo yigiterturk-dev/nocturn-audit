@@ -1,5 +1,5 @@
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from "node:fs";
-import { dirname } from "node:path";
+import { dirname, join } from "node:path";
 import type { Finding } from "./core/finding.js";
 import type { Project } from "./core/rule.js";
 import { scanProject } from "./core/engine.js";

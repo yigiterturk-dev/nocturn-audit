@@ -4,6 +4,7 @@ import { createHash } from "node:crypto";
 import { join, relative, sep } from "node:path";
 import fg from "fast-glob";
 import type { Finding } from "./finding.js";
+import { fileEvidence } from "./finding.js";
 import {
   emptyCounts,
   riskScore,
@@ -231,6 +232,34 @@ const RULE_SOURCE_GLOBS = [
   "src/invariants.ts",
 ];
 
+/**
+ * Does this process have network access?
+ *
+ * The `net` requirement used to be declared but NEVER measured — `hasNetwork`
+ * was hardcoded to `true`, so a rule that needed the network ran (and usually
+ * threw) even when there was none. That is the exact silence the measurement
+ * contract exists to prevent. This does one cheap, cached HEAD request; the
+ * result is shared by every project in the process.
+ */
+let netCache: boolean | null = null;
+async function hasNetworkAccess(): Promise<boolean> {
+  if (netCache !== null) return netCache;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 2_500);
+  try {
+    const res = await fetch("https://registry.npmjs.org/", {
+      method: "HEAD",
+      signal: controller.signal,
+    });
+    netCache = res.ok || res.status < 500;
+  } catch {
+    netCache = false;
+  } finally {
+    clearTimeout(timer);
+  }
+  return netCache;
+}
+
 /** Collect a project's source files (relative to the root). */
 export async function collectFiles(root: string): Promise<string[]> {
   if (!existsSync(root)) return [];
@@ -289,6 +318,21 @@ export function collectTrackedFiles(root: string): Set<string> | null {
   }
 }
 
+/**
+ * Caches shared between the sanitized static contexts (ctx / tamCtx).
+ *
+ * The engine builds THREE contexts per project. Each used to carry its own
+ * read + AST cache, so the same file was read and parsed up to three times.
+ * The sanitized contexts (ctx, tamCtx) can share one cache safely — they
+ * differ only in the file LIST, not in how a given file is read. rawCtx keeps
+ * its own cache because it reads UNSANITIZED content (sharing would hand
+ * sanitized text to the comment-scanning rules).
+ */
+interface SharedCaches {
+  readCache: Map<string, string | null>;
+  treeCache: Map<string, AstFile | null>;
+}
+
 function buildStaticContext(
   project: Project,
   root: string,
@@ -296,8 +340,9 @@ function buildStaticContext(
   tracked: Set<string> | null,
   /** Blank out comments and pattern definitions (line/column preserved). */
   sanitize = false,
+  shared?: SharedCaches,
 ): StaticContext {
-  const cache = new Map<string, string | null>();
+  const cache = shared?.readCache ?? new Map<string, string | null>();
   const read = (relPath: string): string | null => {
     if (cache.has(relPath)) return cache.get(relPath)!;
     const abs = join(root, relPath);
@@ -340,13 +385,16 @@ function buildStaticContext(
     const flags = regex.flags.includes("g")
       ? regex.flags
       : regex.flags + "g";
+    // Compile ONCE, not once per line. The old code rebuilt the RegExp inside
+    // the line loop — with ~60 rules × thousands of files × lines each, that
+    // was a measurable share of scan time.
+    const rx = new RegExp(regex.source, flags);
     for (const file of files) {
       if (include && !include(file)) continue;
       const content = read(file);
       if (content == null) continue;
       const lines = content.split(/\r?\n/);
       for (let i = 0; i < lines.length; i++) {
-        const rx = new RegExp(regex.source, flags);
         let m: RegExpExecArray | null;
         while ((m = rx.exec(lines[i])) !== null) {
           // A match inside a pattern definition is skipped: `/child_process/` is
@@ -374,7 +422,7 @@ function buildStaticContext(
 
   // Tree cache: ONE parse per file. `null` is cached too, so an unparseable
   // file is not retried by every rule.
-  const treeCache = new Map<string, AstFile | null>();
+  const treeCache = shared?.treeCache ?? new Map<string, AstFile | null>();
   const ast = (relPath: string): AstFile | null => {
     if (treeCache.has(relPath)) return treeCache.get(relPath) ?? null;
     const content = read(relPath);
@@ -595,6 +643,7 @@ function unmetRequirement(
     )
       return g;
     if (g === "sql" && !ortam.files.some((f) => /\.sql$/i.test(f))) return g;
+    if (g === "prisma" && !ortam.files.some((f) => /\.prisma$/i.test(f))) return g;
   }
   return null;
 }
@@ -642,8 +691,52 @@ export async function scanProject(
   if (runStatic || runDeps) {
     if (!existsSync(root)) {
       notes.push(`Project path not found: ${root} — static scan skipped.`);
+      // Yol yoksa TARAMA HİÇ YAPILMADI. Bunu yalnız bir nota yazmak, raporun
+      // "score 0 · ✓ no findings" demesine yol açıyordu: yanlış yapılandırma
+      // TEMİZ RAPOR gibi okunuyordu — bir güvenlik aracının verebileceği en
+      // kötü cevap. (Gerçek vaka: proje taşındı, targets.json eski yolu
+      // gösteriyordu, rapor aylarca yeşil görünebilirdi.)
+      // Kesin bir HIGH bulgu üretiyoruz: skor sıfır olamaz, gözden kaçamaz.
+      findings.push({
+        ruleId: "int-scan-target-missing",
+        title: "Audit did not run — the configured project path does not exist",
+        owasp: "A09:2021-Security Logging & Monitoring Failures",
+        severity: "high",
+        confidence: "certain",
+        description:
+          `targets.json points "${project.name}" at \`${root}\`, but that path does not ` +
+          `exist. No file was read, so NO rule could run. This report says nothing about ` +
+          `the project's security — it must not be read as "clean".`,
+        evidence: [fileEvidence("targets.json", 1, `path: ${root}`)],
+        remediation:
+          "Point targets.json at the project's current path (or remove the entry if the " +
+          "project is gone), then run the scan again.",
+      });
     } else {
       files = await collectFiles(root);
+      // Yol VAR ama içinde taranacak kaynak dosya YOKSA, sonuç yine "0 bulgu"dur
+      // ve yine TEMİZ diye okunur. Gerçek vaka: [KOD-ADI]-v2 klasöründe yalnız iki
+      // log dosyası vardı (kod başka yerde/VPS'te), rapor "score 0" diyordu.
+      // Bulunmayan yol kadar tehlikeli, çünkü daha az göze batıyor.
+      if (files.length === 0) {
+        notes.push(`No scannable source file under ${root} — nothing was measured.`);
+        findings.push({
+          ruleId: "int-scan-target-empty",
+          title: "Audit measured nothing — the project path contains no source file",
+          owasp: "A09:2021-Security Logging & Monitoring Failures",
+          severity: "high",
+          confidence: "certain",
+          description:
+            `"${project.name}" is registered at \`${root}\` and the path exists, but it ` +
+            `contains no scannable source file. Every rule returned nothing because there ` +
+            `was nothing to read — this report must not be read as "clean". The code has ` +
+            `probably moved, or lives on another machine.`,
+          evidence: [fileEvidence("targets.json", 1, `path: ${root}`)],
+          remediation:
+            "Point targets.json at the directory that actually holds the source (or remove " +
+            "the entry). If the code only lives on a server, scan it there.",
+        });
+      }
     }
   }
 
@@ -659,9 +752,16 @@ export async function scanProject(
     // project that keeps a fake key in its fixtures would get the same false
     // critical — a very common shape.
     const uretimDosyalari = files.filter((f) => !isTestOrFixture(f));
-    const ctx = buildStaticContext(project, root, uretimDosyalari, tracked, true);
+    // ctx and tamCtx read the same (sanitized) content — share one cache so a
+    // file is read and parsed once, not twice. rawCtx reads unsanitized text
+    // and keeps its own cache.
+    const paylasilan: SharedCaches = {
+      readCache: new Map<string, string | null>(),
+      treeCache: new Map<string, AstFile | null>(),
+    };
+    const ctx = buildStaticContext(project, root, uretimDosyalari, tracked, true, paylasilan);
     // Rules that compare a list against the directory MUST see the test files.
-    const tamCtx = buildStaticContext(project, root, files, tracked, true);
+    const tamCtx = buildStaticContext(project, root, files, tracked, true, paylasilan);
     // Raw contents (comments included) for rules that search for the text itself.
     const rawCtx = buildStaticContext(project, root, uretimDosyalari, tracked, false);
     const ortam = {
@@ -669,7 +769,7 @@ export async function scanProject(
       files: files,
       root: root,
       hasLive: !!project.url && project.owned,
-      hasNetwork: true,
+      hasNetwork: await hasNetworkAccess(),
     };
     for (const rule of rules) {
       if (rule.kind !== "static") continue;

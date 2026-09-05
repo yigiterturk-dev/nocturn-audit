@@ -23,13 +23,19 @@ interface Pattern {
 
 const PROVIDER_PATTERNS: Pattern[] = [
   { name: "Stripe secret key", re: /sk_(live|test)_[A-Za-z0-9]{16,}/, severity: "critical" },
-  { name: "Stripe restricted key", re: /rk_(live|test)_[A-Za-z0-9]{16,}/, severity: "high" },
-  { name: "AWS access key", re: /AKIA[0-9A-Z]{16}/, severity: "critical" },
-  { name: "Google API key", re: /AIza[0-9A-Za-z_\-]{35}/, severity: "high" },
-  { name: "GitHub token", re: /gh[pousr]_[A-Za-z0-9]{36,}/, severity: "critical" },
-  { name: "Slack token", re: /xox[baprs]-[A-Za-z0-9-]{10,}/, severity: "high" },
-  { name: "OpenAI key", re: /sk-(proj-)?[A-Za-z0-9]{20,}/, severity: "critical" },
-  { name: "JWT/service token", re: /eyJ[A-Za-z0-9_\-]{10,}\.[A-Za-z0-9_\-]{10,}\.[A-Za-z0-9_\-]{10,}/, severity: "high" },
+  // ⚠️ KELIME SINIRI ŞART. Bu desenler bir önekle başlıyor ve sınır olmadan
+  // KELİMENİN ORTASINDA eşleşiyorlar. Gerçek vaka: `"id": "coindesk-cd03c41e…"`
+  // (bir haber kimliği) OpenAI anahtarı sanıldı — çünkü "coinde·sk-·<24 hex>"
+  // deseni tutuyor. Tek bir veri dosyası 27 KESİN KRİTİK üretti ve portföyün
+  // risk sıralamasını tamamen çarpıttı. Yanlış "certain critical", raporun
+  // tamamına olan güveni bitirir.
+  { name: "Stripe restricted key", re: /(?<![A-Za-z0-9_])rk_(live|test)_[A-Za-z0-9]{16,}/, severity: "high" },
+  { name: "AWS access key", re: /(?<![A-Za-z0-9])AKIA[0-9A-Z]{16}/, severity: "critical" },
+  { name: "Google API key", re: /(?<![A-Za-z0-9])AIza[0-9A-Za-z_\-]{35}/, severity: "high" },
+  { name: "GitHub token", re: /(?<![A-Za-z0-9_])gh[pousr]_[A-Za-z0-9]{36,}/, severity: "critical" },
+  { name: "Slack token", re: /(?<![A-Za-z0-9])xox[baprs]-[A-Za-z0-9-]{10,}/, severity: "high" },
+  { name: "OpenAI key", re: /(?<![A-Za-z0-9])sk-(proj-)?[A-Za-z0-9]{20,}/, severity: "critical" },
+  { name: "JWT/service token", re: /(?<![A-Za-z0-9])eyJ[A-Za-z0-9_\-]{10,}\.[A-Za-z0-9_\-]{10,}\.[A-Za-z0-9_\-]{10,}/, severity: "high" },
   { name: "Private key block", re: /-----BEGIN (RSA |EC |OPENSSH |PGP )?PRIVATE KEY-----/, severity: "critical" },
 ];
 
@@ -40,8 +46,15 @@ const PROVIDER_PATTERNS: Pattern[] = [
 const SECRET_ASSIGN =
   /\b(secret|api[_-]?key|apikey|password|passwd|token|private[_-]?key|client[_-]?secret|auth[_-]?token)\b\s*[:=]\s*["'`]([^"'`\n]{18,})["'`]/i;
 
+// Kendini "sahte" diye ILAN EDEN degerler ve BIR SIRRI ANLATAN metin de yer
+// tutucudur. Iki gercek vaka:
+//  - clinentra: `const token = "receiver-verification-token-32-characters"`
+//  - nocturn-audit'in KENDISI: bu kusuru anlatan commit mesaji, ornek olarak
+//    yazdigi sahte token yuzunden KESIN HIGH uretti. Bir aracin kendi
+//    duzeltme kaydini "sir sizdirdin" diye isaretlemesi, kuralin metni degil
+//    SIRRI aramasi gerektigini gosterir.
 const PLACEHOLDER =
-  /(process\.env|import\.meta\.env|your[_-]?|xxx|placeholder|example|changeme|dummy|<[^>]+>|\$\{)/i;
+  /(process\.env|import\.meta\.env|your[_-]?|xxx|placeholder|example|changeme|dummy|<[^>]+>|\$\{|invalid[-_]|fake[-_]?|not[-_]?a[-_]?real|redacted|sample[-_]|\b(test|verification)[-_](token|key|secret|password|api)|(token|key|secret|password)[-_](test|verification|placeholder)|[-_]characters\b)/i;
 
 // Real key prefixes (provider formats + JWT + PEM).
 const KEY_PREFIX = /^(sk[-_]|rk_|AKIA|AIza|gh[pousr]_|xox[baprs][-_]|eyJ|-----BEGIN)/;

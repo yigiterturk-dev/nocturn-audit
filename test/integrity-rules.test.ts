@@ -260,6 +260,28 @@ export async function changePassword(input) {
     expect(f[0].severity).toBe("high");
   });
 
+  it("CLEAN: çerezi silen fonksiyon oturumu zaten kapatır (yanlış alarm değil)", () => {
+    const f = run(sessionRevokeMissing, {
+      "lib/auth/mode.ts": `import { cookies } from "next/headers";
+const DEMO_COOKIE = "demo";
+export async function disableDemoMode() {
+  const store = await cookies();
+  store.delete(DEMO_COOKIE);
+}`,
+    });
+    expect(f.length).toBe(0);
+  });
+
+  it("CLEAN: session_epoch ileri alınırsa açık oturumlar düşer", () => {
+    const f = run(sessionRevokeMissing, {
+      "lib/auth/admin.ts": `const s = "session";
+export async function deactivateUser(id) {
+  await db.update(users).set({ session_epoch: new Date() }).where(eq(users.id, id));
+}`,
+    });
+    expect(f.length).toBe(0);
+  });
+
   it("CLEAN: old sessions are closed", () => {
     const f = run(sessionRevokeMissing, {
       "lib/auth.ts": `const s = "session";

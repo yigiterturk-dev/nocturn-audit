@@ -41,6 +41,48 @@ async function run(
 }
 
 describe("A01 — api-route-auth-missing", () => {
+  it("CLEAN: bilerek acik ama FRENLENMIS uc (hiz freni + butce tavani) → NO finding", async () => {
+    // Gercek yanlis alarm: toolcompare.net /api/chat. Ziyaretciye acik AI
+    // asistani; risk kimlik degil MALIYET ve o risk zaten kapatilmis.
+    const f = await run(apiRouteAuthMissing, {
+      "src/app/api/chat/route.ts": `import { hizFreni } from '@/lib/adminAuth';
+import { butceAyir, GUNLUK_TAVAN } from '@/lib/chat-butce';
+export async function POST(req: Request) {
+  const fren = await hizFreni(req);
+  if (!fren.ok) return new Response('yavas', { status: 429 });
+  const butce = butceAyir(GUNLUK_TAVAN);
+  if (!butce.ok) return new Response('gunluk tavan doldu', { status: 429 });
+  const rows = await db.query('select ad from tools');
+  return Response.json({ rows });
+}`,
+    });
+    expect(f.length).toBe(0);
+  });
+
+  it("BAD: acik uc ama HICBIR fren yok → bulgu (kural korelmedi)", async () => {
+    const f = await run(apiRouteAuthMissing, {
+      "src/app/api/chat/route.ts": `export async function POST(req: Request) {
+  const { soru } = await req.json();
+  const rows = await db.query('select * from tools where ad = ' + soru);
+  return Response.json({ rows });
+}`,
+    });
+    expect(f.length).toBeGreaterThan(0);
+  });
+
+  it("BAD: fren VAR ama butce tavani YOK → yine bulgu (iki sart birlikte aranir)", async () => {
+    const f = await run(apiRouteAuthMissing, {
+      "src/app/api/chat/route.ts": `import { hizFreni } from '@/lib/adminAuth';
+export async function POST(req: Request) {
+  const fren = await hizFreni(req);
+  if (!fren.ok) return new Response('yavas', { status: 429 });
+  const rows = await db.query('select * from tools');
+  return Response.json({ rows });
+}`,
+    });
+    expect(f.length).toBeGreaterThan(0);
+  });
+
   it("a DB-WRITING (mutation) route with no auth → high, likely", async () => {
     const f = await run(apiRouteAuthMissing, {
       "app/api/orders/route.ts": `export async function POST(req){ const b = await req.json(); await db.orders.create({ data: b }); return Response.json({ok:true}); }`,
@@ -231,6 +273,21 @@ describe("A01 — supabase-service-role", () => {
 });
 
 describe("A02 — hardcoded-secrets", () => {
+  it("CLEAN: haber kimligi ('coindesk-<hash>') OpenAI anahtari SANILMAZ", async () => {
+    // Gercek vaka: tek bir veri dosyasi 27 KESIN KRITIK uretti, cunku
+    // "coinde·sk-·<24 hex>" deseni sinirsiz eslesiyordu.
+    const f = await run(hardcodedSecrets, {
+      "data/crypto-state.json": `{"candidates":[{"id":"coindesk-cd03c41e2002345b038104ee","sourceDomain":"coindesk.com"},{"id":"coindesk-9f2ab1c4d5e6f70819273645","status":"dry-run"}]}`,
+    });
+    expect(f.length).toBe(0);
+  });
+  it("BAD: GERCEK OpenAI anahtari yine yakalanir (kural korelmedi)", async () => {
+    const f = await run(hardcodedSecrets, {
+      "src/ai.ts": `const openai = new OpenAI({ apiKey: "sk-proj-A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6" });`,
+    });
+    expect(f.length).toBeGreaterThan(0);
+  });
+
   it("Stripe live key'i critical + kesin yakalar", async () => {
     const f = await run(hardcodedSecrets, {
       "lib/pay.ts": `const key = "sk_test_abcdEFGH1234ijkl";`,
@@ -1285,6 +1342,26 @@ def init_db():
     expect(f.length).toBe(1);
     expect(f[0].severity).toBe("medium");
   });
+  it("CLEAN: better-sqlite3 only in the LOCKFILE (drizzle optional peer) → NO finding", async () => {
+    // Gercek yanlis alarm: Neon/Postgres projesinin package-lock.json'i
+    // drizzle-orm'un opsiyonel peer'i olarak better-sqlite3 listeliyordu.
+    const f = await run(fkCascadeOff, {
+      "package-lock.json": `{"packages":{"node_modules/drizzle-orm":{"peerDependencies":{"better-sqlite3":">=7"}}}}`,
+      "db/branches.sql": `CREATE TABLE user_businesses (
+  user_id uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE
+);`,
+    });
+    expect(f.length).toBe(0);
+  });
+  it("CLEAN: SQLite gecse bile proje SUNUCU veritabanina baglaniyorsa → NO finding", async () => {
+    const f = await run(fkCascadeOff, {
+      "db/index.ts": `import { neon } from "@neondatabase/serverless";
+const sql = neon(process.env.DATABASE_URL!);
+const legacy = new Database("eski.db");`,
+      "db/schema.sql": `CREATE TABLE child (id uuid REFERENCES parent(id) ON DELETE CASCADE);`,
+    });
+    expect(f.length).toBe(0);
+  });
   it("PRAGMA foreign_keys=ON is enabled somewhere → NO finding", async () => {
     const f = await run(fkCascadeOff, {
       "database/models.py": `import sqlite3
@@ -1545,6 +1622,59 @@ export function rateLimit(ip: string) {
     });
     expect(f.length).toBe(1);
     expect(f[0].severity).toBe("medium");
+  });
+  it("CLEAN: kalici depo KOMSU dosyada (saf mantik + DB store) → NO finding", async () => {
+    // Gercek vaka: [KOD-ADI]. rate-limit.ts saf karar mantigi + bir Map,
+    // rate-limit-store.ts ise FOR UPDATE kilidiyle Postgres sayaci.
+    const f = await run(inmemoryRatelimitServerless, {
+      "next.config.js": "module.exports = {}",
+      "lib/security/rate-limit.ts": `export type RateRule = { limit: number };
+const buckets = new Map<string, number[]>();
+export function evaluateRate(key: string, rule: RateRule) {
+  const hits = buckets.get(key) ?? [];
+  if (hits.length >= rule.limit) return { allowed: false, status: 429 };
+  return { allowed: true };
+}`,
+      "lib/security/rate-limit-store.ts": `import { drizzleDb } from "@/lib/db";
+import { evaluateRate } from "./rate-limit";
+export async function consumeRateShared(key: string, rule: { limit: number }) {
+  const row = await drizzleDb.execute("select hits from rate_buckets where key = $1 for update");
+  return evaluateRate(key, rule);
+}`,
+    });
+    expect(f.length).toBe(0);
+  });
+
+  it("CLEAN: KENDI SUNUCUSUNDA tek Node sureci (app.js) → NO finding", async () => {
+    // Gercek yanlis alarm: toolcompare.net Hostinger'da app.js ile TEK surec
+    // calisiyor; orada bellek ici sayac DOGRU sayar.
+    const f = await run(inmemoryRatelimitServerless, {
+      "next.config.js": "module.exports = {}",
+      "app.js": `const next = require('next'); const app = next({}); app.prepare();`,
+      "lib/rate-limit.ts": `const sayaclar = new Map<string, number>();
+export function hizFreni(ip: string) {
+  const n = (sayaclar.get(ip) ?? 0) + 1;
+  sayaclar.set(ip, n);
+  if (n > 5) return { ok: false, status: 429 };
+  return { ok: true };
+}`,
+    });
+    expect(f.length).toBe(0);
+  });
+  it("BAD: kendi sunucusu AMA pm2 CLUSTER (cok surec) → yine bulgu", async () => {
+    const f = await run(inmemoryRatelimitServerless, {
+      "next.config.js": "module.exports = {}",
+      "app.js": `const next = require('next');`,
+      "ecosystem.config.js": `module.exports = { apps: [{ script: 'app.js', exec_mode: 'cluster', instances: 4 }] };`,
+      "lib/rate-limit.ts": `const sayaclar = new Map<string, number>();
+export function hizFreni(ip: string) {
+  const n = (sayaclar.get(ip) ?? 0) + 1;
+  sayaclar.set(ip, n);
+  if (n > 5) return { ok: false, status: 429 };
+  return { ok: true };
+}`,
+    });
+    expect(f.length).toBe(1);
   });
   it("it uses Upstash/Redis → NO finding", async () => {
     const f = await run(inmemoryRatelimitServerless, {
@@ -1831,5 +1961,49 @@ async function fetchCert(certUrl: string): Promise<string> {
 }`,
     });
     expect(f.length).toBeGreaterThanOrEqual(1);
+  });
+});
+
+describe("A02 — hardcoded-secrets: kendini sahte ilan eden degerler", () => {
+  it("CLEAN: 'invalid-verification-password' ve 'receiver-verification-token-32-characters' → NO finding", async () => {
+    const f = await run(hardcodedSecrets, {
+      "script/verify-auth.ts": `const body = JSON.stringify({ email, password: "invalid-verification-password" });
+const token = "receiver-verification-token-32-characters";`,
+    });
+    expect(f.length).toBe(0);
+  });
+  it("BAD: gercek gorunumlu sir yine yakalanir", async () => {
+    const f = await run(hardcodedSecrets, {
+      "src/cfg.ts": `const apiKey = "9f3Kq2Lm8Xr4Tz7Bv1Nc6Hd5Jw0Ys3Pu";`,
+    });
+    expect(f.length).toBeGreaterThan(0);
+  });
+});
+
+describe("A03 — dangerouslySetInnerHTML: shadcn chart satici dosyasi", () => {
+  it("CLEAN: components/ui/chart.tsx (THEMES + data-chart) → NO finding", async () => {
+    // Portfoy taramasinda TEK BASINA 6 projede "kesin HIGH" uretiyordu.
+    const f = await run(dangerousEval, {
+      "client/src/components/ui/chart.tsx": `const THEMES = { light: "", dark: ".dark" } as const;
+export function ChartStyle({ id, config }: { id: string; config: Record<string, {color?: string}> }) {
+  return (
+    <style
+      dangerouslySetInnerHTML={{
+        __html: Object.entries(THEMES).map(([theme, prefix]) => \`\${prefix} [data-chart=\${id}] {}\`).join("\\n"),
+      }}
+    />
+  );
+}`,
+    });
+    expect(f.length).toBe(0);
+  });
+  it("BAD: ayni yolda AMA istek verisi enjekte ediliyorsa → bulgu", async () => {
+    const f = await run(dangerousEval, {
+      "client/src/components/ui/chart.tsx": `const THEMES = {};
+export function Chart({ req }: any) {
+  return <style data-chart="x" dangerouslySetInnerHTML={{ __html: req.query.css }} />;
+}`,
+    });
+    expect(f.length).toBeGreaterThan(0);
   });
 });

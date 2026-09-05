@@ -20,8 +20,13 @@ import type { StaticRule } from "../core/rule.js";
  * Map/Set/{}/[], and (d) NO durable store (redis/upstash/kv/db) is used.
  */
 
+// NOT: bu kural yalnız İngilizce adlandırmayı tanıyordu. Türkçe yazılmış bir
+// hız freni (`hizFreni`, `istekSiniri`) görünmez oluyordu: toolcompare.net'te
+// İNGİLİZCE dosyadaki sayaç yakalandı ama `adminAuth.hizFreni` içindeki ikinci
+// bellek-içi sayaç hiç fark edilmedi. Kural, kodun yazıldığı dili tanımıyorsa
+// "bulgu yok" demesi bir şey ifade etmez.
 const RL_CONTEXT =
-  /(rate[-_ ]?limit|ratelimit|throttle|too[-_ ]?many|\b429\b|_deneme\b|attempts?\b|brute|lockout|limiter)/i;
+  /(rate[-_ ]?limit|ratelimit|throttle|too[-_ ]?many|\b429\b|_deneme\b|attempts?\b|brute|lockout|limiter|hiz[ _]?freni|hız[ _]?freni|istek[ _]?sinir|istek[ _]?sınır|deneme[ _]?sayis|cok[ _]?fazla[ _]?istek)/i;
 const INMEM_STORE =
   /^\s*(const|let|var)\s+\w+\s*(:[^=]+)?=\s*(new\s+(Map|Set)\s*(<[^>]*>)?\s*\(|\{\s*\}|\[\s*\])/;
 // Durable store signals. CAREFUL: bare `Ratelimit` is NOT used — it collides
@@ -62,6 +67,33 @@ export const inmemoryRatelimitServerless: StaticRule = {
       ctx.grep(/from\s+["']next\/server["']|export\s+const\s+runtime\s*=|@vercel\/|next\/server/i).length > 0;
     if (!serverless) return findings;
 
+    /**
+     * "next.config.* var" SERVERLESS DEMEK DEĞİLDİR.
+     *
+     * Kendi sunucusunda TEK uzun ömürlü Node süreci olarak çalışan bir Next
+     * uygulamasında bellek içi sayaç DOĞRU sayar; orada bu kural yanlış alarmdır.
+     * Gerçek vaka: toolcompare.net Hostinger'da `app.js` ile tek süreç
+     * çalışıyor (kodun yorumunda da böyle yazıyor ve doğrulandı: LiteSpeed,
+     * vercel.json yok) — kural yine de "hiçbir şey yapmıyor" diyordu.
+     *
+     * Vercel'e ait bir iz varsa bu kapı açılmaz; oradaki süreç modeli gerçekten
+     * örneğe göre sıfırlanır.
+     */
+    const vercelIzi =
+      ctx.exists("vercel.json") ||
+      ctx.grep(/@vercel\/(kv|functions|analytics|edge)|VERCEL_ENV|process\.env\.VERCEL\b/i).length > 0;
+    const kendiSunucusu =
+      !vercelIzi &&
+      (ctx.exists("app.js") || ctx.exists("server.js") || ctx.exists("server.ts") ||
+        ctx.exists("Dockerfile") || ctx.exists("ecosystem.config.js") ||
+        ctx.exists("ecosystem.config.cjs") || ctx.exists("Procfile") ||
+        ctx.grep(/output\s*:\s*["']standalone["']/).length > 0);
+    // pm2 cluster / birden çok örnek ⇒ süreç TEK değildir, kural yine geçerli.
+    const cokSurec =
+      ctx.grep(/exec_mode\s*:\s*["']cluster["']|instances\s*:\s*(?!1\b)\d+|instances\s*:\s*["']max["']|cluster\.fork\(/i)
+        .length > 0;
+    if (kendiSunucusu && !cokSurec) return findings;
+
     // Files that have rate-limit context
     const rlHits = ctx.grep(RL_CONTEXT);
     const files = new Set(rlHits.map((h) => h.file).filter(isJsTs));
@@ -72,6 +104,29 @@ export const inmemoryRatelimitServerless: StaticRule = {
       const content = withoutComments(raw);  // do not count 'upstash' etc. inside comments
       // If it uses a durable store (Upstash/Redis/KV/DB) there is no problem.
       if (PERSISTENT.test(content)) continue;
+
+      /**
+       * KALICI DEPO KOMŞU DOSYADA OLABİLİR.
+       *
+       * Yaygın ve İYİ bir desen: saf karar mantığı bir modülde (`rate-limit.ts`,
+       * içinde tip/■hesap + bir Map), kalıcı sayaç ise onu içe aktaran ikinci bir
+       * modülde (`rate-limit-store.ts`, satır kilidiyle DB). Yalnız ilk dosyaya
+       * bakan kural "sayacın bellekte" der — oysa rotaların çağırdığı depo DB'dir.
+       *
+       * Gerçek vaka: [KOD-ADI]. Sayaç `FOR UPDATE` kilidiyle Postgres'e taşınmış,
+       * hatta dosyanın yorumunda bu kuralın anlattığı hatanın aynısı yazılı;
+       * kural yine de "hiçbir şey yapmıyor" diyordu. Böyle bir iddia, sorunu
+       * ZATEN ÇÖZMÜŞ bir ekibin araca olan güvenini bitirir.
+       */
+      const temelAd = (file.split(/[\\/]/).pop() ?? "").replace(/\.(ts|tsx|js|mjs|cjs)$/, "");
+      if (temelAd) {
+        const kardesDepo = ctx.grep(new RegExp(`from\\s+["'][^"']*${temelAd}["']`)).some((m) => {
+          if (m.file === file) return false;
+          const c = ctx.read(m.file);
+          return !!c && RL_CONTEXT.test(c) && PERSISTENT.test(c);
+        });
+        if (kardesDepo) continue;
+      }
 
       // Is there an in-memory store at module level (no indentation)?
       const lines = content.split(/\r?\n/);

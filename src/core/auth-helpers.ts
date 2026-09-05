@@ -26,7 +26,12 @@ const KIMLIK_SINYALI =
  * otherwise. SAFE because the body signal (reading a cookie or session) is still
  * required; only client resolvers that really read identity count, not
  * display-only helpers such as `getClientName`. */
-const KIMLIK_ADI = /^(get|require|resolve|current|ensure|assert|fetch|load|read)?\s*\w*(actor|user|session|identity|principal|viewer|account|auth|member|subject|caller|client|tenant|workspace|org)\w*$/i;
+// `admin|owner|role|guard|gate|yonetici`: gercekte en yaygin kapi adlari bunlar
+// (`requireAdmin`, `getAdmin`, `ensureOwner`, `requireRole`). Listede olmadiklari
+// icin TAM KORUMALI kod "auth kontrolu yok" diye isaretlenebiliyordu. Govde
+// sinyali (cerez/oturum okuma) yine sart oldugundan bu genisleme yanlis pozitif
+// degil, yanlis NEGATIF duzeltmesidir.
+const KIMLIK_ADI = /^(get|require|resolve|current|ensure|assert|fetch|load|read)?\s*\w*(actor|user|session|identity|principal|viewer|account|auth|member|subject|caller|client|tenant|workspace|org|admin|owner|role|guard|gate|yonetici)\w*$/i;
 
 const TANIM =
   /export\s+(?:async\s+)?function\s+(\w+)|(?:export\s+)?(?:async\s+)?function\s+(\w+)|(?:export\s+)?const\s+(\w+)\s*=\s*(?:async\s*)?\(/g;

@@ -63,3 +63,107 @@ describe("the measurement contract", () => {
     rmSync(dir, { recursive: true, force: true });
   });
 });
+
+/**
+ * A missing project path is the same defect in its purest form: the tool CANNOT
+ * LOOK, yet the report used to say "score 0 · no findings". A wrong path in
+ * targets.json (project moved) would then read as GREEN for months.
+ */
+describe("a project path that does not exist", () => {
+  it("does NOT report clean — it raises a certain HIGH finding", async () => {
+    const yokYol = join(tmpdir(), "kesinlikle-olmayan-proje-" + Date.now());
+    const rapor = await scanProject(
+      { name: "hayalet", path: yokYol, owned: false } as never,
+      allRules,
+      { staticOnly: true },
+    );
+    const bulgu = rapor.findings.find((f) => f.ruleId === "int-scan-target-missing");
+    expect(bulgu, "eksik yol icin bulgu uretilmeli").toBeTruthy();
+    expect(bulgu!.severity).toBe("high");
+    expect(bulgu!.confidence).toBe("certain");
+    // En onemlisi: rapor BOS olmamali; bos rapor "temiz" diye okunur.
+    expect(rapor.findings.length).toBeGreaterThan(0);
+  });
+
+  it("yol VAR ama kaynak dosya YOKSA da temiz demez (int-scan-target-empty)", async () => {
+    // Gercek vaka: [KOD-ADI]-v2 klasorunde yalniz 2 log dosyasi vardi, kod baska
+    // yerdeydi; rapor "score 0" diyordu.
+    const dir = mkdtempSync(join(tmpdir(), "bos-proje-"));
+    writeFileSync(join(dir, "launchd.err.log"), "sadece log\n");
+    const rapor = await scanProject(
+      { name: "bos", path: dir, owned: false } as never,
+      allRules,
+      { staticOnly: true },
+    );
+    const bulgu = rapor.findings.find((f) => f.ruleId === "int-scan-target-empty");
+    expect(bulgu, "bos proje icin bulgu uretilmeli").toBeTruthy();
+    expect(bulgu!.severity).toBe("high");
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it("var olan bir proje icin bu bulguyu URETMEZ (yanlis alarm degil)", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "gercek-proje-"));
+    writeFileSync(join(dir, "index.js"), "export const x = 1;\n");
+    const rapor = await scanProject(
+      { name: "gercek", path: dir, owned: false } as never,
+      allRules,
+      { staticOnly: true },
+    );
+    expect(rapor.findings.some((f) => f.ruleId === "int-scan-target-missing")).toBe(false);
+    expect(rapor.findings.some((f) => f.ruleId === "int-scan-target-empty")).toBe(false);
+    rmSync(dir, { recursive: true, force: true });
+  });
+});
+
+/**
+ * A misspelled key in targets.json used to be swallowed in silence. `urls: [...]`
+ * (correct: `url`) meant the live probes never ran — for months — and the report
+ * still looked clean.
+ */
+describe("targets.json unknown key", () => {
+  it("tanınmayan anahtar UYARI verir ve dogru adi onerir", async () => {
+    const { loadRegistry } = await import("../src/registry.js");
+    const dir = mkdtempSync(join(tmpdir(), "hedefler-"));
+    const t = join(dir, "targets.json");
+    writeFileSync(
+      t,
+      JSON.stringify({
+        projects: [{ name: "x", path: dir, owned: true, urls: ["https://ornek.test"] }],
+      }),
+    );
+    const uyarilar: string[] = [];
+    const eski = console.warn;
+    console.warn = (m?: unknown) => uyarilar.push(String(m));
+    try {
+      loadRegistry(t);
+    } finally {
+      console.warn = eski;
+    }
+    expect(uyarilar.join("\n")).toMatch(/urls/);
+    expect(uyarilar.join("\n")).toMatch(/"url" mi demek istediniz/);
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it("dogru anahtarlar icin UYARI VERMEZ", async () => {
+    const { loadRegistry } = await import("../src/registry.js");
+    const dir = mkdtempSync(join(tmpdir(), "hedefler-temiz-"));
+    const t = join(dir, "targets.json");
+    writeFileSync(
+      t,
+      JSON.stringify({
+        $comment: "aciklama satiri uyari uretmemeli",
+        projects: [{ name: "x", path: dir, owned: true, url: "https://ornek.test" }],
+      }),
+    );
+    const uyarilar: string[] = [];
+    const eski = console.warn;
+    console.warn = (m?: unknown) => uyarilar.push(String(m));
+    try {
+      loadRegistry(t);
+    } finally {
+      console.warn = eski;
+    }
+    expect(uyarilar).toEqual([]);
+    rmSync(dir, { recursive: true, force: true });
+  });
+});

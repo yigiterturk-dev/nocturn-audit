@@ -15,13 +15,19 @@ interface Pattern {
 
 const PROVIDER_PATTERNS: Pattern[] = [
   { name: "Stripe secret key", re: /sk_(live|test)_[A-Za-z0-9]{16,}/, severity: "critical" },
-  { name: "Stripe restricted key", re: /rk_(live|test)_[A-Za-z0-9]{16,}/, severity: "high" },
-  { name: "AWS access key", re: /AKIA[0-9A-Z]{16}/, severity: "critical" },
-  { name: "Google API key", re: /AIza[0-9A-Za-z_\-]{35}/, severity: "high" },
-  { name: "GitHub token", re: /gh[pousr]_[A-Za-z0-9]{36,}/, severity: "critical" },
-  { name: "Slack token", re: /xox[baprs]-[A-Za-z0-9-]{10,}/, severity: "high" },
-  { name: "OpenAI key", re: /sk-(proj-)?[A-Za-z0-9]{20,}/, severity: "critical" },
-  { name: "Supabase/JWT (service) token", re: /eyJ[A-Za-z0-9_\-]{10,}\.[A-Za-z0-9_\-]{10,}\.[A-Za-z0-9_\-]{10,}/, severity: "high" },
+  // ⚠️ KELIME SINIRI ŞART. Bu desenler bir önekle başlıyor ve sınır olmadan
+  // KELİMENİN ORTASINDA eşleşiyorlar. Gerçek vaka: `"id": "coindesk-cd03c41e…"`
+  // (bir haber kimliği) OpenAI anahtarı sanıldı — çünkü "coinde·sk-·<24 hex>"
+  // deseni tutuyor. Tek bir veri dosyası 27 KESİN KRİTİK üretti ve portföyün
+  // risk sıralamasını tamamen çarpıttı. Yanlış "certain critical", raporun
+  // tamamına olan güveni bitirir.
+  { name: "Stripe restricted key", re: /(?<![A-Za-z0-9_])rk_(live|test)_[A-Za-z0-9]{16,}/, severity: "high" },
+  { name: "AWS access key", re: /(?<![A-Za-z0-9])AKIA[0-9A-Z]{16}/, severity: "critical" },
+  { name: "Google API key", re: /(?<![A-Za-z0-9])AIza[0-9A-Za-z_\-]{35}/, severity: "high" },
+  { name: "GitHub token", re: /(?<![A-Za-z0-9_])gh[pousr]_[A-Za-z0-9]{36,}/, severity: "critical" },
+  { name: "Slack token", re: /(?<![A-Za-z0-9])xox[baprs]-[A-Za-z0-9-]{10,}/, severity: "high" },
+  { name: "OpenAI key", re: /(?<![A-Za-z0-9])sk-(proj-)?[A-Za-z0-9]{20,}/, severity: "critical" },
+  { name: "Supabase/JWT (service) token", re: /(?<![A-Za-z0-9])eyJ[A-Za-z0-9_\-]{10,}\.[A-Za-z0-9_\-]{10,}\.[A-Za-z0-9_\-]{10,}/, severity: "high" },
   { name: "Private key block", re: /-----BEGIN (RSA |EC |OPENSSH |PGP )?PRIVATE KEY-----/, severity: "critical" },
   { name: "iyzico key", re: /(iyzico|IYZICO)[^\n]{0,20}(sandbox|api)[-_]?key['"\s:=]+[A-Za-z0-9]{16,}/i, severity: "high" },
 ];
@@ -30,8 +36,16 @@ const PROVIDER_PATTERNS: Pattern[] = [
 const SECRET_ASSIGN =
   /\b(secret|api[_-]?key|apikey|password|passwd|token|private[_-]?key|client[_-]?secret|auth[_-]?token)\b\s*[:=]\s*["'`]([^"'`]{12,})["'`]/i;
 
+// Kendini "sahte" diye ILAN EDEN degerler de yer tutucudur. Gercek vaka:
+// `password: "invalid-verification-password"` ve
+// `const token = "receiver-verification-token-32-characters"` -- ikisi de
+// dogrulama betiklerinde, ikisi de HIGH bulgu uretti. Bir sir, adinda
+// "invalid"/"verification"/"32-characters" yaziyorsa sir degildir.
 const PLACEHOLDER =
-  /(process\.env|import\.meta\.env|your[_-]?|xxx|placeholder|example|changeme|<[^>]+>|\$\{)/i;
+  /(process\.env|import\.meta\.env|your[_-]?|xxx|placeholder|example|changeme|<[^>]+>|\$\{|invalid[-_]|dummy|fake[-_]?|not[-_]?a[-_]?real|redacted|sample[-_]|\b(test|verification)[-_](token|key|secret|password|api)|(token|key|secret|password)[-_](test|verification|placeholder)|[-_]characters\b)/i;
+
+// Kabuk/komut sözdizimi — bir sır değeri asla böyle görünmez.
+const SHELL_IFADESI = /\$\(|\$\{|\||\/dev\/null|\bgrep\b|\bcut\b|\bsed\b|\bawk\b|\bcurl\b|2>|&&/;
 
 const shannon = (s: string): number => {
   const freq: Record<string, number> = {};
@@ -126,6 +140,15 @@ export const hardcodedSecrets: StaticRule = {
           // If the value is an env-var NAME (UPPER_SNAKE_CASE, e.g. AGGREGATOR_WEBHOOK_SECRET)
           // it is a config key rather than a secret value → skip.
           if (isEnvVarName(value)) continue;
+          // Sırrı OKUYAN komut, sırrın KENDİSİ değildir.
+          //
+          // Gerçek vaka (yanindapos ops betikleri, 3 sahte HIGH): kabuk satırı
+          //   T="$(grep -m1 -E '^TELEGRAM_(BOT_)?TOKEN=' /root/jarvis/.env | cut -d= -f2-)"
+          // `TOKEN='` desenine uyuyor ve tırnak içindeki KOMUT yüksek entropili bir
+          // "değer" sanılıyordu. Oysa satır sırrı bir dosyadan okuyor — kodda sır yok.
+          // Ayrım basit ve güvenilir: bir anahtar/parola BOŞLUK içermez, kabuk
+          // sözdizimi hiç içermez.
+          if (/\s/.test(value) || SHELL_IFADESI.test(value)) continue;
           if (value.length >= 16 && shannon(value) >= 3.5) {
             const key = `${file}:${i}:entropy`;
             if (seen.has(key)) continue;

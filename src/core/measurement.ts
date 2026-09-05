@@ -34,7 +34,9 @@ export type Requirement =
   /** Must be a Python project (requirements/pyproject). */
   | "python"
   /** A SQL schema or migration file must exist. */
-  | "sql";
+  | "sql"
+  /** A Prisma schema (schema.prisma) must exist. */
+  | "prisma";
 
 /** A rule that did not run because a precondition was unmet. */
 export interface CoverageGap {
@@ -54,4 +56,5 @@ export const REQUIREMENT_REASON: Record<Requirement, string> = {
   js: "no parseable JS/TS file",
   python: "not a Python project (no requirements or pyproject)",
   sql: "no SQL schema or migration file",
+  prisma: "no Prisma schema (schema.prisma) found",
 };

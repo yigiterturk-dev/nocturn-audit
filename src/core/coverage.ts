@@ -77,6 +77,9 @@ export function measureCoverage(root: string): CoverageReport {
     readable,
     okunamayan,
     diller,
-    yuzde: hepsi === 0 ? 100 : Math.round((readable / hepsi) * 100),
+    // An empty project is NOT "100% readable" — there is nothing to read, so
+    // coverage is meaningless. 0 says "nothing was readable" honestly; the
+    // report's notes already flag a project with no source files.
+    yuzde: hepsi === 0 ? 0 : Math.round((readable / hepsi) * 100),
   };
 }

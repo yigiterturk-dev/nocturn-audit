@@ -20,6 +20,9 @@ import { kvkkSpecialCategory } from "./static/kvkk-special-category.js";
 import { sqlInjection } from "./static/sql-injection.js";
 import { dangerousEval } from "./static/dangerous-eval.js";
 import { sqlIdentifierInjection } from "./static/sql-identifier-injection.js";
+import { pathTraversal } from "./static/path-traversal.js";
+import { redos } from "./static/redos.js";
+import { prototypePollution } from "./static/prototype-pollution.js";
 // A04 — Insecure Design
 import { checkThenActUpsert } from "./static/check-then-act-upsert.js";
 import { inmemoryRatelimitServerless } from "./static/inmemory-ratelimit-serverless.js";
@@ -28,6 +31,9 @@ import { sqliteNoBusyTimeout } from "./static/sqlite-no-busy-timeout.js";
 import { fkCascadeOff } from "./static/fk-cascade-off.js";
 import { unguardedJsonParse } from "./static/unguarded-json-parse.js";
 import { unboundedPaidLoop } from "./static/unbounded-paid-loop.js";
+import { tarihUtcGunKaymasi } from "./static/tarih-utc-gun-kaymasi.js";
+import { serverActionAuthMissing } from "./static/server-action-auth-missing.js";
+import { yedekKanitiYok } from "./static/yedek-kaniti-yok.js";
 // A05 — Security Misconfiguration
 import { securityHeadersConfig } from "./static/security-headers-config.js";
 import { corsWildcard } from "./static/cors-wildcard.js";
@@ -36,6 +42,7 @@ import { backupCruftTracked } from "./static/backup-cruft-tracked.js";
 // A07 — Identification & Authentication Failures
 import { jwtWeakVerification } from "./static/jwt-weak-verification.js";
 import { spoofableClientIp } from "./static/spoofable-client-ip.js";
+import { jwtAlgNone } from "./static/jwt-alg-none.js";
 // A08 — Software & Data Integrity Failures
 import { webhookSignature } from "./static/webhook-signature.js";
 import { externalScriptSri } from "./static/external-script-sri.js";
@@ -59,6 +66,9 @@ import { liveSslDomain } from "./live/ssl-domain.js";
 import { liveOpenEndpoints } from "./live/open-endpoints.js";
 import { liveReflectedXss } from "./live/reflected-xss.js";
 import { liveUserEnumeration } from "./live/user-enumeration.js";
+import { liveCorsMisconfig } from "./live/cors-misconfig.js";
+import { liveHttpMethods } from "./live/http-methods.js";
+import { liveDirectoryListing } from "./live/directory-listing.js";
 
 // Integrity — the "the system says it is fine and it is not" family.
 import { piiInRepo } from "./integrity/pii-in-repo.js";
@@ -82,6 +92,7 @@ import { alertTargetMissing } from "./integrity/alert-target-missing.js";
 import { staticPageStrictCsp } from "./integrity/static-page-strict-csp.js";
 import { contractTwoWriters } from "./integrity/contract-two-writers.js";
 import { scanAfterWrite } from "./integrity/scan-after-write.js";
+import { silentBudgetDenial } from "./integrity/silent-budget-denial.js";
 // live
 import { liveHealthEndpoints } from "./live/health-endpoints.js";
 import { livePageNonceCoverage } from "./live/page-nonce-coverage.js";
@@ -108,6 +119,7 @@ export const staticRules: Rule[] = [
   staticPageStrictCsp,
   contractTwoWriters,
   scanAfterWrite,
+  silentBudgetDenial,
   apiRouteAuthMissing,
   idorDirectObject,
   supabaseServiceRole,
@@ -124,11 +136,17 @@ export const staticRules: Rule[] = [
   kvkkSpecialCategory,
   sqlInjection,
   sqlIdentifierInjection,
+  pathTraversal,
+  redos,
+  prototypePollution,
   dangerousEval,
   missingRateLimit,
   sqliteNoBusyTimeout,
   checkThenActUpsert,
   inmemoryRatelimitServerless,
+  tarihUtcGunKaymasi,
+  serverActionAuthMissing,
+  yedekKanitiYok,
   fkCascadeOff,
   unguardedJsonParse,
   unboundedPaidLoop,
@@ -138,6 +156,7 @@ export const staticRules: Rule[] = [
   backupCruftTracked,
   jwtWeakVerification,
   spoofableClientIp,
+  jwtAlgNone,
   webhookSignature,
   externalScriptSri,
   testSchemaDivergence,
@@ -159,6 +178,9 @@ export const liveRules: Rule[] = [
   liveReflectedXss,
   liveUserEnumeration,
   liveHealthEndpoints,
+  liveCorsMisconfig,
+  liveHttpMethods,
+  liveDirectoryListing,
   livePageNonceCoverage,
 ];
 

@@ -126,6 +126,41 @@ const looksLikePublicForm = (content: string): boolean => {
   return hasRateLimit && hasValidation && insertOnly && !readsUserData;
 };
 
+/**
+ * ÖLÇÜLÜ AÇIK UÇ: kimlik istemez ama kötüye kullanımı FRENLENMİŞTİR.
+ *
+ * Ziyaretçiye açık bir AI asistanı, arama ya da fiyat sorgusu bilerek herkese
+ * açıktır; oturum aramak yanlıştır. Buradaki gerçek risk kimlik değil MALİYET ve
+ * kötüye kullanımdır — ve o risk hız freni + harcama tavanıyla kapatılmışsa uç
+ * "kimliksiz" diye HIGH verilemez.
+ *
+ * Gerçek yanlış alarm: toolcompare.net'in /api/chat ucu. Denetimden geçmiş,
+ * hız freni + günlük bütçe tavanı + sunucuda kurulan bağlam eklenmişti; kural
+ * yine de tek HIGH bulgusu olarak onu gösteriyordu. `looksLikePublicForm`
+ * yakalayamıyordu çünkü o kapı SADECE insert eden uçlar için yazılmış ve
+ * fren adları yalnız İngilizceydi.
+ *
+ * Şart: fren VAR + harcama/kota tavanı VAR + kullanıcıya ait veri OKUNMUYOR.
+ * Üçü birden olmadan bu kapı açılmaz.
+ */
+const isMeteredPublicEndpoint = (content: string): boolean => {
+  const hasRateLimit =
+    /rateLimit|rate_limit|ratelimit|Ratelimit|limiter\.|@upstash\/ratelimit|checkRateLimit|enforceWriteLimit|hizFreni|hız ?freni|istekSiniri/i.test(
+      content,
+    );
+  // Harcama/kota tavanı — para veya jeton harcayan ucun asıl koruması budur.
+  const hasSpendCap =
+    /butce|bütçe|budget|spend(Limit|Cap)|quota|kota|dailyLimit|GUNLUK_TAVAN|GÜNLÜK_TAVAN|TAVANI?\b|max_?tokens|maxTokens|costCap|creditLimit/i.test(
+      content,
+    );
+  // Kullanıcıya ait kaydı okuyorsa açık uç değildir — sahiplik yüzeyi vardır.
+  const readsUserData =
+    /\.(findUnique|findFirst|findMany)\s*\(|\.select\s*\([\s\S]{0,60}(user_id|owner|userId)/i.test(
+      content,
+    );
+  return hasRateLimit && hasSpendCap && !readsUserData;
+};
+
 // Routes that are public by convention — auth is not expected, do not report.
 const isPublicByConvention = (file: string, content: string): boolean => {
   const f = file.replace(/\\/g, "/").toLowerCase();
@@ -133,6 +168,8 @@ const isPublicByConvention = (file: string, content: string): boolean => {
   if (isAuthBoundaryRoute(file)) return true;
   // A public form with rate limiting and validation (lead, newsletter, contact).
   if (looksLikePublicForm(content)) return true;
+  // Bilerek açık ama frenlenmiş uç (AI asistanı, arama, fiyat sorgusu).
+  if (isMeteredPublicEndpoint(content)) return true;
   // Health/status, sitemap/robots/manifest, og and image endpoints.
   if (/\/(health|healthz|status|ping|readyz|livez)\//.test(f)) return true;
   if (/\/(sitemap|robots|manifest)\b/.test(f)) return true;

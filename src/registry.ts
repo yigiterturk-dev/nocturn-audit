@@ -1,6 +1,6 @@
-import { readFileSync, existsSync, statSync } from "node:fs";
+import { readFileSync, existsSync } from "node:fs";
 import { homedir } from "node:os";
-import { join, resolve, isAbsolute, basename } from "node:path";
+import { join, resolve, isAbsolute } from "node:path";
 import type { Project, Stack } from "./core/rule.js";
 
 interface RawProject {
@@ -113,6 +113,37 @@ export function loadRegistry(targetsPath: string): Project[] {
     throw new Error("targets.json must contain a 'projects' array.");
   }
 
+  // Yazım hatası olan bir anahtar SESSİZCE yok sayılırsa, o alanın açtığı tüm
+  // kontroller kapalı kalır ve rapor yine "temiz" görünür. Gerçek vaka:
+  // targets.json'da `urls: [...]` yazıyordu (doğrusu `url`), canlı problar
+  // aylarca hiç çalışmadı ve kimse fark etmedi. Bu yüzden tanımadığımız her
+  // anahtar YÜKSEK SESLE söylenir.
+  // "not": serbest metin açıklama alanı. Araç okumaz ama İNSAN okur — örneğin bir
+  // projede bilerek açık bırakılmış bulguların gerekçesi burada durur. Şemada
+  // olmadığı için "tanınmayan anahtar" uyarısı üretiyordu; uyarı gürültüsü, gerçek
+  // uyarıların (canlı probu kapatan "urls" gibi) görülmemesine yol açar.
+  const BILINEN_ANAHTARLAR = new Set(["name", "path", "url", "owned", "stack", "not"]);
+  const YAYGIN_YANLIS: Record<string, string> = {
+    urls: "url",
+    uri: "url",
+    host: "url",
+    dir: "path",
+    root: "path",
+    directory: "path",
+    owner: "owned",
+  };
+  for (const p of raw.projects as unknown as Array<Record<string, unknown>>) {
+    for (const anahtar of Object.keys(p)) {
+      if (anahtar.startsWith("$") || BILINEN_ANAHTARLAR.has(anahtar)) continue;
+      const oneri = YAYGIN_YANLIS[anahtar];
+      console.warn(
+        `targets.json: "${String(p.name ?? "?")}" içinde tanınmayan anahtar "${anahtar}"` +
+          (oneri ? ` — "${oneri}" mi demek istediniz?` : "") +
+          " Bu alan YOK SAYILIYOR; ilgili kontroller çalışmaz.",
+      );
+    }
+  }
+
   return raw.projects.map((p) => {
     const absPath = expandPath(p.path);
     const stack = discoverStack(absPath, p.stack);
@@ -133,38 +164,4 @@ export function findProject(
   return projects.find(
     (p) => p.name.toLowerCase() === name.toLowerCase(),
   );
-}
-
-/**
- * A project built straight from a directory path, with no targets.json.
- *
- * WHY: the first thing a new user types is `npx nocturn-audit scan .`, and
- * that failed with "targets.json not found" -- pointing at a file inside the
- * INSTALLED PACKAGE, which the user cannot reasonably create. A security
- * tool that cannot be run once, on the folder you are standing in, does not
- * get a second try. The registry stays the way to track MANY projects over
- * time; it is no longer the price of admission for scanning one.
- *
- * `url` is deliberately absent: a live probe needs a target the user
- * declared. Ad-hoc scans are static, which is also the safe default --
- * we never fire HTTP at a host nobody named.
- */
-export function projeDizinden(dizin: string): Project {
-  const absPath = expandPath(dizin);
-  if (!existsSync(absPath) || !statSync(absPath).isDirectory()) {
-    throw new Error(`Not a directory: ${absPath}`);
-  }
-  return {
-    name: basename(absPath) || absPath,
-    path: absPath,
-    owned: true,
-    stack: discoverStack(absPath),
-  } satisfies Project;
-}
-
-/** Does this look like a path the user meant, rather than a registry name? */
-export function dizinGibiMi(deger: string): boolean {
-  if (deger === "." || deger === "..") return true;
-  if (deger.startsWith("~") || deger.startsWith("/") || deger.startsWith("./") || deger.startsWith("../")) return true;
-  return false;
 }

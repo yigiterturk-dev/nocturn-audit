@@ -175,6 +175,29 @@ export const dangerousEval: StaticRule = {
       if (/\.(md|mdx|txt|rst|json|ya?ml|lock|csv|tsv|html?|css|svg)$/i.test(file)) continue;
       const content = ctx.read(file);
       if (!content) continue;
+      /**
+       * shadcn/ui'nin CHART bileşeni — olduğu gibi kopyalanan satıcı kodu.
+       *
+       * `components/ui/chart.tsx`, tema renklerini bir `<style>` etiketine
+       * `dangerouslySetInnerHTML` ile basar. İçerik SABİT bir THEMES haritası +
+       * config nesnesinin anahtarlarından kurulur; istek verisi girmez.
+       *
+       * Bu dosya binlerce projeye AYNI şekilde kopyalanıyor: portföy taramasında
+       * TEK BAŞINA 6 projede "kesin HIGH" üretti (neuroscope, nocturn-hub,
+       * nocturn-lifeos, voice-agent-template, nocturn-youtube-automation,
+       * Aysira DM AI). Aynı satıcı dosyası için altı ayrı "acil" satırı, gerçek
+       * bulguları listede görünmez yapar.
+       */
+      const yolNorm = file.replace(/\\/g, "/");
+      const shadcnChart =
+        /(^|\/)components\/ui\/chart\.(tsx|jsx)$/.test(yolNorm) &&
+        /THEMES/.test(content) &&
+        /data-chart=/.test(content) &&
+        // Güvenlik ağı: enjekte edilen metin bir istek/parametre değerinden
+        // besleniyorsa satıcı dosyası bile olsa susmayız.
+        !/(req\.|request\.|searchParams|params\.|props\.html|dangerousHtml)/.test(content);
+      if (shadcnChart) continue;
+
       const lines = content.split(/\r?\n/);
       // Tree confirmation: cmd/eval signatures count only on lines the tree
       // confirmed. When the tree cannot be built (unsupported extension, parse

@@ -22,6 +22,23 @@ import type { StaticRule } from "../core/rule.js";
  */
 
 const SQLITE = /sqlite3?\.connect\s*\(|aiosqlite\.connect|new\s+Database\s*\(|better-sqlite3/i;
+
+/**
+ * Lockfiles LIE about the dialect. A lockfile lists the OPTIONAL PEERS of every
+ * package: drizzle-orm supports a dozen drivers, so `better-sqlite3` appears in
+ * package-lock.json of a project that only ever talks to Postgres. Treating that
+ * as "this is a SQLite project" produced a false MEDIUM on a Neon/Postgres app.
+ * A dialect claim must come from code the project actually runs.
+ */
+const KILIT_DOSYASI = /(^|\/)(package-lock\.json|yarn\.lock|pnpm-lock\.yaml|npm-shrinkwrap\.json|poetry\.lock|Gemfile\.lock|composer\.lock)$/i;
+
+/**
+ * Explicit "this project is NOT SQLite" signals. If the project connects to a
+ * server database, `ON DELETE CASCADE` is enforced by the engine and the whole
+ * premise of this rule (per-connection PRAGMA) does not apply.
+ */
+const SUNUCU_VERITABANI =
+  /neon\(|@neondatabase|drizzle-orm\/pg-core|drizzle-orm\/mysql-core|from\s+["']pg["']|require\(["']pg["']\)|postgres:\/\/|postgresql:\/\/|mysql:\/\/|psycopg2|asyncpg|mongoose/i;
 const FK_DECLARE = /REFERENCES\s+\w+|ON\s+DELETE\s+CASCADE|ON\s+DELETE\s+SET\s+NULL/i;
 const FK_PRAGMA = /PRAGMA\s+foreign_keys\s*=?\s*(ON|1)|foreign_keys\s*=\s*(ON|1|True)|pragma\s*\(\s*['"]foreign_keys/i;
 
@@ -37,8 +54,17 @@ export const fkCascadeOff: StaticRule = {
   run(ctx): Finding[] {
     const findings: Finding[] = [];
 
-    // Is this a SQLite project?
-    if (ctx.grep(SQLITE).length === 0) return findings;
+    // Is this a SQLite project? Lockfile hits DO NOT COUNT (see KILIT_DOSYASI).
+    const sqliteHits = ctx
+      .grep(SQLITE)
+      .filter((m) => !KILIT_DOSYASI.test(m.file.replace(/\\/g, "/")));
+    if (sqliteHits.length === 0) return findings;
+
+    // Does the project talk to a SERVER database? Then the engine enforces the
+    // cascade and this rule has nothing to say — say nothing rather than guess.
+    if (ctx.grep(SUNUCU_VERITABANI).some((m) => !KILIT_DOSYASI.test(m.file.replace(/\\/g, "/")))) {
+      return findings;
+    }
 
     // Does the schema declare REFERENCES / ON DELETE CASCADE anywhere?
     const declHits = ctx.grep(FK_DECLARE);

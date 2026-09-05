@@ -17,6 +17,53 @@ const LOCALHOST = /https?:\/\/(localhost|127\.0\.0\.1|0\.0\.0\.0)/i;
 const isMarkupFile = (file: string): boolean =>
   /\.(html?|tsx|jsx)$/.test(file.replace(/\\/g, "/"));
 
+/**
+ * Bu dosya, BAŞKA BİR SİTENİN kaydedilmiş kopyası mı?
+ *
+ * Referans/tasarım amacıyla kaydedilmiş tam sayfa render'ları depoda sık durur.
+ * Onların script'lerine SRI eklemek anlamsızdır: dosya hiç yayınlanmaz ve
+ * script'ler zaten bizim değildir.
+ *
+ * Gerçek vaka: firstvega-landing'de `src/brand/{fv,vw}.html` iki WordPress
+ * sitesinin kaydedilmiş hâliydi ve TEK BAŞLARINA 75 bulgu üretip projeyi
+ * portföyün ikinci en riskli projesi gösteriyordu (skor 227). `build.py` bu
+ * klasöre hiç dokunmuyor, `dist/` içine de girmiyor.
+ *
+ * Ayırt edici ölçüldü: kopyada `canonical` hangi adresi gösteriyorsa harici
+ * script'lerin TAMAMI da o adreste ve GÖRELİ script yok. Projenin kendi
+ * sayfasında ise varlıklar göreli gelir. Tek başına "çok sayıda mutlak script"
+ * yetmez — CDN kullanan gerçek bir sayfa da öyle görünür; belirleyici olan
+ * script'lerin canonical ile AYNI konakta toplanması.
+ */
+function baskaSitenSayfasi(content: string): boolean {
+  const kanonik =
+    /<link[^>]+rel=["']canonical["'][^>]+href=["']https?:\/\/([^/"']+)/i.exec(content) ??
+    /<meta[^>]+property=["']og:url["'][^>]+content=["']https?:\/\/([^/"']+)/i.exec(content);
+  if (!kanonik) return false;
+  const konak = kanonik[1].toLowerCase().replace(/^www\./, "");
+
+  /**
+   * Gömülü oynatıcı / etiket yöneticisi konakları paydadan ÇIKARILIR.
+   * Kaydedilmiş bir sayfada Vimeo, YouTube, GTM, Facebook script'leri de bulunur;
+   * bunları saymak oranı düşürüp kopyayı "gerçek sayfa" gibi gösteriyordu
+   * (vegawest kopyası 21 Vimeo script'i yüzünden 0,60'ta kalmıştı).
+   * Bu konaklar hem kopyada hem gerçek sayfada olur — ayırt edici değiller.
+   */
+  const GOMU_KONAK =
+    /(^|\.)(vimeo|youtube|youtube-nocookie|ytimg|googletagmanager|google-analytics|doubleclick|facebook|fbcdn|twitter|x|linkedin|hotjar|clarity\.ms|tiktok)\.[a-z.]+$|^(google|gstatic)\.com$/i;
+
+  const mutlak = [...content.matchAll(/<script\b[^>]*\bsrc\s*=\s*["']https?:\/\/([^/"']+)/gi)]
+    .map((m) => m[1].toLowerCase().replace(/^www\./, ""))
+    .filter((h) => !GOMU_KONAK.test(h));
+  if (mutlak.length < 5) return false;
+
+  const ayni = mutlak.filter((h) => h === konak).length;
+  const goreli = (content.match(/<script\b[^>]*\bsrc\s*=\s*["']\/[^/]/gi) ?? []).length;
+
+  // Script'lerin ezici çoğunluğu canonical'ın konağında VE göreli script yok.
+  return ayni / mutlak.length >= 0.8 && goreli === 0;
+}
+
 export const externalScriptSri: StaticRule = {
   id: "a08-external-script-no-sri",
   title: "Harici script'te SRI (integrity) yok",
@@ -34,6 +81,9 @@ export const externalScriptSri: StaticRule = {
       if (!isMarkupFile(file)) continue;
       const content = ctx.read(file);
       if (!content) continue;
+      // Başka bir sitenin KAYDEDİLMİŞ kopyasıysa, oradaki script'ler bizim
+      // sorumluluğumuzda değildir — bkz. baskaSitenSayfasi.
+      if (baskaSitenSayfasi(content)) continue;
 
       const rx = new RegExp(SCRIPT_TAG.source, SCRIPT_TAG.flags);
       let m: RegExpExecArray | null;

@@ -2007,3 +2007,51 @@ export function Chart({ req }: any) {
     expect(f.length).toBeGreaterThan(0);
   });
 });
+
+describe("A08 — external-script-sri: kaydedilmis sayfa kopyalari", () => {
+  it("CLEAN: baska sitenin KAYDEDILMIS kopyasi → NO finding", async () => {
+    // Gercek vaka: firstvega-landing/src/brand/*.html iki WordPress sitesinin
+    // kaydedilmis hali; TEK BASINA 75 bulgu uretip projeyi portfoyun ikinci
+    // en riskli projesi gosteriyordu. build.py o klasore hic dokunmuyor.
+    const scripts = Array.from({ length: 6 }, (_, i) =>
+      `<script src="https://firstvega.com/wp-includes/js/lib${i}.js"></script>`
+    ).join("\n");
+    const f = await run(externalScriptSri, {
+      "src/brand/fv.html": `<!DOCTYPE html><html><head>
+<link rel="canonical" href="https://firstvega.com/" />
+${scripts}
+</head><body></body></html>`,
+    });
+    expect(f.length).toBe(0);
+  });
+
+  it("CLEAN: kopyada gomulu Vimeo oynatici script'leri olsa da → NO finding", async () => {
+    // Gercek vaka: vegawest kopyasindaki 21 Vimeo script'i orani 0,60'a
+    // dusuruyordu; gomu saglayicilari hem kopyada hem gercek sayfada bulunur,
+    // yani ayirt edici degiller.
+    const kendi = Array.from({ length: 6 }, (_, i) =>
+      `<script src="https://vegawest.com/wp-content/js/a${i}.js"></script>`).join("\n");
+    const vimeo = Array.from({ length: 12 }, (_, i) =>
+      `<script src="https://player.vimeo.com/v${i}.js"></script>`).join("\n");
+    const f = await run(externalScriptSri, {
+      "src/brand/vw.html": `<!DOCTYPE html><html><head>
+<link rel="canonical" href="https://vegawest.com/" />
+${kendi}
+${vimeo}
+</head><body></body></html>`,
+    });
+    expect(f.length).toBe(0);
+  });
+
+  it("BAD: kendi sayfamiz CDN'den script yukluyorsa → bulgu (kural korelmedi)", async () => {
+    const f = await run(externalScriptSri, {
+      "src/index.html": `<!DOCTYPE html><html><head>
+<link rel="canonical" href="https://benimsitem.com/" />
+<script src="/assets/app.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.7.1/jquery.min.js"></script>
+</head><body></body></html>`,
+    });
+    expect(f.length).toBeGreaterThan(0);
+  });
+});

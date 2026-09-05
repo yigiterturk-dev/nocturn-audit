@@ -93,6 +93,7 @@ import { staticPageStrictCsp } from "./integrity/static-page-strict-csp.js";
 import { contractTwoWriters } from "./integrity/contract-two-writers.js";
 import { scanAfterWrite } from "./integrity/scan-after-write.js";
 import { silentBudgetDenial } from "./integrity/silent-budget-denial.js";
+import { icLinkAlakasizCapa } from "./integrity/ic-link-alakasiz-capa.js";
 // live
 import { liveHealthEndpoints } from "./live/health-endpoints.js";
 import { livePageNonceCoverage } from "./live/page-nonce-coverage.js";
@@ -120,6 +121,7 @@ export const staticRules: Rule[] = [
   contractTwoWriters,
   scanAfterWrite,
   silentBudgetDenial,
+  icLinkAlakasizCapa,
   apiRouteAuthMissing,
   idorDirectObject,
   supabaseServiceRole,

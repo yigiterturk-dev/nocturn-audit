@@ -68,5 +68,6 @@
     "targets.example.json",
     "README.md",
     "LICENSE"
-  ]
+  ],
+  "private": true
 }

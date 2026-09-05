@@ -52,7 +52,7 @@ export const pathTraversal: StaticRule = {
      * Portföy taramasında bu tek varsayım 15 bulgunun TAMAMINI üretti:
      * `tools/ajan-panel/core.mjs` (HTTP yüzeyi sıfır, yerel panel),
      * `nocturn-proofrepo/src/scan.ts` ("bana bir klasör ver, tara"),
-     * [KOD-ADI] yedek kütüphanesi, [KOD-ADI]-stock içe aktarma betiği...
+     * Gama yedek kütüphanesi, Eta-stock içe aktarma betiği...
      * Onbeş sahte "high", gerçek bulguları listede görünmez yapar.
      *
      * Şart: dosyanın KENDİSİNDE bir istek yüzeyi olmalı ya da onu İÇE AKTARAN

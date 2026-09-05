@@ -113,7 +113,7 @@ export const inmemoryRatelimitServerless: StaticRule = {
        * modülde (`rate-limit-store.ts`, satır kilidiyle DB). Yalnız ilk dosyaya
        * bakan kural "sayacın bellekte" der — oysa rotaların çağırdığı depo DB'dir.
        *
-       * Gerçek vaka: [KOD-ADI]. Sayaç `FOR UPDATE` kilidiyle Postgres'e taşınmış,
+       * Gerçek vaka: Kapa. Sayaç `FOR UPDATE` kilidiyle Postgres'e taşınmış,
        * hatta dosyanın yorumunda bu kuralın anlattığı hatanın aynısı yazılı;
        * kural yine de "hiçbir şey yapmıyor" diyordu. Böyle bir iddia, sorunu
        * ZATEN ÇÖZMÜŞ bir ekibin araca olan güvenini bitirir.

@@ -86,7 +86,7 @@ describe("a project path that does not exist", () => {
   });
 
   it("yol VAR ama kaynak dosya YOKSA da temiz demez (int-scan-target-empty)", async () => {
-    // Gercek vaka: [KOD-ADI]-v2 klasorunde yalniz 2 log dosyasi vardi, kod baska
+    // Gercek vaka: Sigma-v2 klasorunde yalniz 2 log dosyasi vardi, kod baska
     // yerdeydi; rapor "score 0" diyordu.
     const dir = mkdtempSync(join(tmpdir(), "bos-proje-"));
     writeFileSync(join(dir, "launchd.err.log"), "sadece log\n");

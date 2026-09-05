@@ -1624,7 +1624,7 @@ export function rateLimit(ip: string) {
     expect(f[0].severity).toBe("medium");
   });
   it("CLEAN: kalici depo KOMSU dosyada (saf mantik + DB store) → NO finding", async () => {
-    // Gercek vaka: [KOD-ADI]. rate-limit.ts saf karar mantigi + bir Map,
+    // Gercek vaka: Kapa. rate-limit.ts saf karar mantigi + bir Map,
     // rate-limit-store.ts ise FOR UPDATE kilidiyle Postgres sayaci.
     const f = await run(inmemoryRatelimitServerless, {
       "next.config.js": "module.exports = {}",

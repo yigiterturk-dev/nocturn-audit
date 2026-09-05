@@ -715,7 +715,7 @@ export async function scanProject(
     } else {
       files = await collectFiles(root);
       // Yol VAR ama içinde taranacak kaynak dosya YOKSA, sonuç yine "0 bulgu"dur
-      // ve yine TEMİZ diye okunur. Gerçek vaka: [KOD-ADI]-v2 klasöründe yalnız iki
+      // ve yine TEMİZ diye okunur. Gerçek vaka: Sigma-v2 klasöründe yalnız iki
       // log dosyası vardı (kod başka yerde/VPS'te), rapor "score 0" diyordu.
       // Bulunmayan yol kadar tehlikeli, çünkü daha az göze batıyor.
       if (files.length === 0) {

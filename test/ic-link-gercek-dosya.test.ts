@@ -15,7 +15,12 @@ import { icLinkAlakasizCapa } from "../src/integrity/ic-link-alakasiz-capa.js";
  * kapsanıyor, bu ek kanıt makineye bağlı.
  */
 
-const REPO = `${process.env.HOME}/Desktop/Web Siteleri/gelecekfinans-site`;
+/**
+ * Fikstür deposunun yolu ortamdan gelir; makineye özgü bir yol koda yazılmaz
+ * (yayın kopyası herkese açıktır). Kurulumu:
+ *   NOCTURN_LINKER_FIXTURE_REPO=/yol/gelecekfinans-site npx vitest run
+ */
+const REPO = process.env.NOCTURN_LINKER_FIXTURE_REPO ?? "";
 const DOSYA = "lib/bot/linker.ts";
 const DUZELTME_COMMIT = "4ebcb59"; // "iç linkleme: bağlaç/fiil çapaları ... engellendi"
 
@@ -31,7 +36,7 @@ const gitShow = (ref: string): string | null => {
   }
 };
 
-const varMi = existsSync(REPO);
+const varMi = REPO !== "" && existsSync(REPO);
 
 describe.skipIf(!varMi)("int — kural gerçek gelecekfinans arızasını yakalar", () => {
   it("ARIZALI sürüm (düzeltmeden önce) bulgu üretir", () => {

@@ -42,7 +42,7 @@ describe("A01 — server action yetki kapısı", () => {
     expect(f.length).toBe(0);
   });
 
-  it("CLEAN: DELEGASYON — kapı çağrılan veri modülünde (yanindapos deseni)", () => {
+  it("CLEAN: DELEGASYON — kapı çağrılan veri modülünde (bir rezervasyon SaaS deseni)", () => {
     // actions.ts kararı vermiyor, data.ts'e delege ediyor. Tek kapı = doğru desen;
     // yalnız action dosyasına bakan bir kural bunu yanlışlıkla suçlardı.
     const f = serverActionAuthMissing.run(makeCtx({

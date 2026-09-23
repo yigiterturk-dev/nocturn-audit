@@ -33,8 +33,14 @@ const KIMLIK_SINYALI =
 // degil, yanlis NEGATIF duzeltmesidir.
 const KIMLIK_ADI = /^(get|require|resolve|current|ensure|assert|fetch|load|read)?\s*\w*(actor|user|session|identity|principal|viewer|account|auth|member|subject|caller|client|tenant|workspace|org|admin|owner|role|guard|gate|yonetici)\w*$/i;
 
+// Dördüncü biçim (gerçek vaka — bir e-ticaret CRM projesi, 12 sahte HIGH): React cache()
+// sarmalı. `export const getUserRole = cache(async () => ...)` yazan bir kapı,
+// TANIM deseni `= cache(` değerini tanımadığı için keşfe HİÇ düşmüyor,
+// callsAuthHelper başarısız oluyor ve TAM KORUMALI fonksiyon "auth yok"
+// diye işaretleniyordu. Sarmalayıcı adı (cache/memo/unstable_cache) bilinçli
+// olarak serbest: karar gövde sinyalinden gelir, adından değil.
 const TANIM =
-  /export\s+(?:async\s+)?function\s+(\w+)|(?:export\s+)?(?:async\s+)?function\s+(\w+)|(?:export\s+)?const\s+(\w+)\s*=\s*(?:async\s*)?\(/g;
+  /export\s+(?:async\s+)?function\s+(\w+)|(?:export\s+)?(?:async\s+)?function\s+(\w+)|(?:export\s+)?const\s+(\w+)\s*=\s*(?:async\s*)?\(|(?:export\s+)?const\s+(\w+)\s*=\s*\w+\s*\(/g;
 
 /**
  * The names of the project's auth helpers.
@@ -57,7 +63,7 @@ export function collectAuthHelpers(ctx: StaticContext): Set<string> {
     TANIM.lastIndex = 0;
     let m: RegExpExecArray | null;
     while ((m = TANIM.exec(content)) !== null) {
-      const ad = m[1] || m[2] || m[3];
+      const ad = m[1] || m[2] || m[3] || m[4];
       if (!ad || !KIMLIK_ADI.test(ad)) continue;
       const body = content.slice(m.index, m.index + 1200);
       govdeler.set(ad, body);

@@ -8,6 +8,8 @@ import { fileEvidence } from "./finding.js";
 import {
   emptyCounts,
   riskScore,
+  pislikSkoru,
+  type Pislik,
   type SeverityCounts,
 } from "./severity.js";
 import type {
@@ -40,6 +42,11 @@ export interface ProjectReport {
   certainCounts: SeverityCounts;
   heuristicCounts: SeverityCounts;
   score: number;
+  /**
+   * PİSLİK SKORU — 0-100 karşılaştırılabilir kirlilik + kısmi-ölçüm dürüstlüğü.
+   * gaps > 0 ise skor bir ALT SINIRDIR; rapor bunu "kısmi ölçüm" ile söyler.
+   */
+  pislik: Pislik;
   /** Ids of the rules that ran. */
   rulesRun: string[];
   /** Atlanan reason (varsa). */
@@ -946,6 +953,8 @@ export async function scanProject(
     certainCounts: certain,
     heuristicCounts: heuristic,
     score: riskScore(counts),
+    /** PİSLİK SKORU — karşılaştırılabilir 0-100 kirlilik (alt sınırı; bkz. severity.ts). */
+    pislik: pislikSkoru(counts, gaps.length),
     rulesRun,
     notes,
     standards,

@@ -43,6 +43,25 @@ const SQL_IFADE =
 
 const GIRDI_IZI = /req\.|request\.|params|searchParams|query\.|body|formData|input/;
 
+/**
+ * The "dynamic UPDATE" shape: a column list built from an object's own keys,
+ * where every VALUE is still a placeholder.
+ *
+ *   sqlite.prepare(`UPDATE t SET ${cols.map((k) => `${k} = ?`).join(", ")} WHERE id = ?`)
+ *
+ * Only the column NAMES are interpolated, and in practice they come from a
+ * server-side object literal, not from the request. Two of these were reported
+ * as CERTAIN sql-injection in clinentra — the word "input" appearing anywhere in
+ * the surrounding text was enough to promote the finding. A `certain` label that
+ * turns out to be wrong costs more than a missed `likely` one: it is the label
+ * people act on without checking, so this shape may never claim certainty.
+ */
+const PARAMETRELI_SUTUN_LISTESI =
+  /\.map\s*\([\s\S]{0,60}?=>[\s\S]{0,60}?`\$\{[^}]+\}\s*=\s*(?:\?|\$\d+)\s*`[\s\S]{0,40}?\.join\s*\(/;
+// NOTE: the parameter list cannot be matched with `[^)]*` — `.map((key) => ...)`
+// closes a paren before the arrow, so the first version of this regex never
+// fired on the very code it was written for. Non-greedy [\s\S] spans instead.
+
 /** Is this expression a SQL string carrying a variable? */
 function isDangerousText(n: ts.Expression, source: ts.SourceFile): { text: string } | null {
   // `\`... ${x} ...\`` — an UNTAGGED template (a tagged one is a different node
@@ -89,12 +108,15 @@ export const sqlInjection: StaticRule = {
             for (const arg of n.arguments) {
               const tehlike = isDangerousText(arg, ast.source);
               if (!tehlike) continue;
-              const hasInput = GIRDI_IZI.test(tehlike.text);
+              // Column names built from an object's keys, with placeholders for
+              // every value: the parameterisation was NOT bypassed.
+              const sutunListesi = PARAMETRELI_SUTUN_LISTESI.test(tehlike.text);
+              const hasInput = !sutunListesi && GIRDI_IZI.test(tehlike.text);
               findings.push({
                 ruleId: "a03-sql-injection",
                 title: "Possible SQL injection (parameterisation bypassed)",
                 owasp: "A03:2021-Injection",
-                severity: hasInput ? "high" : "medium",
+                severity: hasInput ? "high" : sutunListesi ? "low" : "medium",
                 cwe: "CWE-89",
                 confidence: hasInput ? "certain" : "likely",
                 description:

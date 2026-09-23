@@ -34,6 +34,58 @@ function isPlainText(dize: string): boolean {
 }
 
 /** Blanks out comments, regex literals and plain-text strings. */
+
+/**
+ * Where does the template literal starting at `start` end?
+ *
+ * A template is not a flat string: `${...}` holds CODE, and that code can hold
+ * another template. Scanning for the next backtick therefore ends the literal in
+ * the wrong place — in `\`SET ${cols.map((k) => \`${k} = ?\`).join(", ")}\`` the
+ * INNER closing backtick was read as the end of the outer one, and everything
+ * after it was blanked out.
+ *
+ * That is worse than it sounds: the blanked tail is code the rules then cannot
+ * see, so a real finding inside it is silently invisible — and clinentra's
+ * parameterised UPDATE was reported as CERTAIN sql-injection because the
+ * `.join(", ")` that proved it safe had been erased.
+ */
+function templateSonu(source: string, start: number): number {
+  let j = start + 1;
+  while (j < source.length) {
+    const ch = source[j];
+    if (ch === "\\") { j += 2; continue; }
+    if (ch === "`") return j + 1;
+    if (ch === "$" && source[j + 1] === "{") { j = ifadeSonu(source, j + 2); continue; }
+    j += 1;
+  }
+  return j;
+}
+
+/** Where does the `${` interpolation that started at `start` close? */
+function ifadeSonu(source: string, start: number): number {
+  let j = start;
+  let derinlik = 1;
+  while (j < source.length && derinlik > 0) {
+    const ch = source[j];
+    if (ch === "\\") { j += 2; continue; }
+    if (ch === "`") { j = templateSonu(source, j); continue; }
+    if (ch === '"' || ch === "'") {
+      const tirnak = ch;
+      j += 1;
+      while (j < source.length && source[j] !== tirnak) {
+        if (source[j] === "\\") j += 1;
+        j += 1;
+      }
+      j += 1;
+      continue;
+    }
+    if (ch === "{") derinlik += 1;
+    else if (ch === "}") derinlik -= 1;
+    j += 1;
+  }
+  return j;
+}
+
 export function blankNonCode(source: string): string {
   let out = "";
   let i = 0;
@@ -74,11 +126,17 @@ export function blankNonCode(source: string): string {
     // String / template — CONTENTS PRESERVED (a real secret may live here).
     if (c === '"' || c === "'" || c === "`") {
       const tirnak = c;
-      let j = i + 1;
-      while (j < source.length) {
-        if (source[j] === "\\") { j += 2; continue; }
-        if (source[j] === tirnak) { j += 1; break; }
-        j += 1;
+      let j: number;
+      if (c === "`") {
+        // A template ends where its interpolations say it ends, not at the next backtick.
+        j = templateSonu(source, i);
+      } else {
+        j = i + 1;
+        while (j < source.length) {
+          if (source[j] === "\\") { j += 2; continue; }
+          if (source[j] === tirnak) { j += 1; break; }
+          j += 1;
+        }
       }
       const dize = source.slice(i, j);
       // PLAIN TEXT strings are blanked out too.

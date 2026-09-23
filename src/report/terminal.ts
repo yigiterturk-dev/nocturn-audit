@@ -68,10 +68,23 @@ export function printReport(reports: ProjectReport[], verbose = false): void {
       `${pc.dim("likely")} ${hc.critical}C/${hc.high}H`;
 
     console.log("");
+    // PİSLİK ETİKETİ — ham score'un yanında karşılaştırılabilir 0-100.
+    // Kısmi ölçümde alt sınır olduğu BELLİ edilir; 0 asla "temiz" sayılmaz.
+    const pislikLabel = r.pislik.partial
+      ? pc.yellow(`${r.pislik.score}/100 ${r.pislik.label}`)
+      : r.pislik.score === 0
+        ? pc.green(`${r.pislik.score}/100 ${r.pislik.label}`)
+        : r.pislik.score >= 30
+          ? pc.red(`${r.pislik.score}/100 ${r.pislik.label}`)
+          : pc.yellow(`${r.pislik.score}/100 ${r.pislik.label}`);
+    const gapNote = r.pislik.partial
+      ? pc.dim(`  (kısmi ölçüm — ${r.gaps.length} kural ölçülemedi, gerçek pislik ≥ bu)`)
+      : "";
+
     console.log(
       `  ${pc.bold(r.project.name)}  ${countLabel(r)}  ${pc.dim(
         `score:${r.score}`,
-      )}  ${owned}${stack ? pc.dim(`  [${stack}]`) : ""}`,
+      )}  ${pislikLabel}${gapNote}  ${owned}${stack ? pc.dim(`  [${stack}]`) : ""}`,
     );
     console.log(pc.dim(`     confidence: `) + confLabel);
 

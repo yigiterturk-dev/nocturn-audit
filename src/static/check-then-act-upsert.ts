@@ -20,6 +20,10 @@ import type { StaticRule } from "../core/rule.js";
  * INSERT OR REPLACE/IGNORE, ya da INSERT'i saran try + except IntegrityError.
  */
 
+// NOT (2026-09-22): tools/scripts dışlaması DENENDİ ve geri alındı — canary
+// disiplini bunu yakaladı: yarış koşulu tek seferlik betikte de mümkündür
+// (cron çift çalıştırma, paralel import). Kural geniş kalır; bu kümenin
+// gerçek düzeltmesi "kurulum betiği bağlamını tanıma" ayrı bir çalışmadır.
 const isSourceLike = (f: string) =>
   /\.(py|js|ts|mjs|cjs|rb|go)$/.test(f) && !/(test|spec|conftest|fixtures?)/.test(f);
 

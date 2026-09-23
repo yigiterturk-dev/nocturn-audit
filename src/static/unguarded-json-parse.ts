@@ -30,6 +30,12 @@ const CATCH = /(except[\s\w.]*:|catch\s*\()/;
 // A constant literal argument -> cannot be corrupt, noise.
 const LITERAL_ARG = /\b(json\.loads|JSON\.parse|orjson\.loads|ujson\.loads|simplejson\.loads)\s*\(\s*['"`]/;
 
+// NOT (2026-09-22): scripts/tools yüzeyini dışlamak DENDİ ve CANARY GERİ
+// ÇEVİRDİ — canary'nin HOLE 9'u (setup.mjs: JSON.parse(readFileSync(config)))
+// da scripts/ içindeydi; harici veriyi parse eden job'lar betik yüzeyinde de
+// gerçek risktir. Yol bazlı daraltma YANLIŞTI; gerçek ayırt edici sinyal
+// "kendi ürettiği artefaktı parse etmek" — o ayrı bir kural çalışması.
+// Kural geniş kalır; korpus FP'leri belgelenmiş durumda (precision'a yansır).
 const isSourceLike = (f: string) =>
   /\.(py|js|ts|mjs|cjs)$/.test(f) &&
   !/(test|spec|conftest|\.min\.)/.test(f) &&

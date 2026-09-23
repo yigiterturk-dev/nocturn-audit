@@ -119,3 +119,60 @@ describe("A02 — sensitive data: a parameter is not storage", () => {
     expect(f.length).toBeGreaterThanOrEqual(1);
   });
 });
+
+/**
+ * FIELD CANARY — the dynamic UPDATE shape.
+ *
+ * The portfolio run reported two of these in clinentra as CERTAIN, the label
+ * that says "no need to check this one". They were false: only the column NAMES
+ * are interpolated (from an object literal built in the same function) and every
+ * value is still a `?`. The promotion to `certain` came from the word "input"
+ * appearing somewhere in the statement text.
+ */
+describe("a03-sql-injection — dynamic column list", () => {
+  const run2 = (files: Record<string, string>) =>
+    sqlInjection.run(makeCtx(files)) as Array<{ severity: string; confidence?: string }>;
+
+  it("FIELD CLEAN: column names from an object's keys, values parameterised — never CERTAIN", () => {
+    const f = run2({
+      "server/sales/store.ts": `
+export function updateAccount(input: UpdateInput, accountId: string, organizationId: string) {
+  const patch: Record<string, unknown> = {};
+  if (input.note !== undefined) patch.note = input.note;
+  patch.updated_at = now;
+
+  const columns = Object.keys(patch);
+  sqlite.prepare(\`UPDATE sales_accounts SET \${columns.map((key) => \`\${key} = ?\`).join(", ")} WHERE id = ? AND organization_id = ?\`)
+    .run(...columns.map((key) => patch[key]), accountId, organizationId);
+}`,
+    });
+    expect(f.every((x) => x.confidence !== "certain")).toBe(true);
+  });
+
+  /**
+   * The rule reads the statement TEXT; it does not follow a variable back to its
+   * source. So `certain` means "the request is interpolated right here" — the
+   * one-hop case above (`const q = req.query.q`) is reported, but only as
+   * `likely`. Worth knowing before trusting the label in either direction.
+   */
+  it("still CERTAIN when the request is interpolated into the statement itself", () => {
+    const f = run2({
+      "server/bad.ts": `
+export function search(req: Request) {
+  db.prepare(\`SELECT * FROM users WHERE name = '\${req.query.q}'\`).all();
+}`,
+    });
+    expect(f.some((x) => x.confidence === "certain")).toBe(true);
+  });
+
+  it("a variable that came from the request one hop earlier is still reported", () => {
+    const f = run2({
+      "server/bad2.ts": `
+export function search(req: Request) {
+  const q = req.query.q;
+  db.prepare(\`SELECT * FROM users WHERE name = '\${q}'\`).all();
+}`,
+    });
+    expect(f.length).toBeGreaterThanOrEqual(1);
+  });
+});

@@ -29,6 +29,8 @@ export interface JsonReport {
     certainCounts?: ProjectReport["counts"];
     heuristicCounts?: ProjectReport["counts"];
     score: number;
+    /** PİSLİK SKORU — 0-100 karşılaştırılabilir kirlilik; kısmi ölçümde alt sınır. */
+    pislik: ProjectReport["pislik"];
     rulesRun: string[];
     notes: string[];
     /** Rules that never ran because a precondition was unmet. */
@@ -84,6 +86,7 @@ export function buildJson(reports: ProjectReport[]): JsonReport {
       certainCounts: r.certainCounts,
       heuristicCounts: r.heuristicCounts,
       score: r.score,
+      pislik: r.pislik,
       rulesRun: r.rulesRun,
       notes: r.notes,
       gaps: r.gaps,

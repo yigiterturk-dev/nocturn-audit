@@ -1,4 +1,6 @@
 import type { Rule } from "./core/rule.js";
+import { clientControlledEntitlement } from "./static/client-controlled-entitlement.js";
+import { webhookIdempotencyTtl } from "./static/webhook-idempotency-ttl.js";
 
 // A01 — Broken Access Control
 import { apiRouteAuthMissing } from "./static/api-route-auth-missing.js";
@@ -43,6 +45,7 @@ import { backupCruftTracked } from "./static/backup-cruft-tracked.js";
 import { jwtWeakVerification } from "./static/jwt-weak-verification.js";
 import { spoofableClientIp } from "./static/spoofable-client-ip.js";
 import { jwtAlgNone } from "./static/jwt-alg-none.js";
+import { weakRandomToken } from "./static/weak-random-token.js";
 // A08 — Software & Data Integrity Failures
 import { webhookSignature } from "./static/webhook-signature.js";
 import { externalScriptSri } from "./static/external-script-sri.js";
@@ -99,6 +102,8 @@ import { liveHealthEndpoints } from "./live/health-endpoints.js";
 import { livePageNonceCoverage } from "./live/page-nonce-coverage.js";
 
 export const staticRules: Rule[] = [
+  clientControlledEntitlement,
+  webhookIdempotencyTtl,
   piiInRepo,
   sqlDialectLeftover,
   piiInLogs,
@@ -159,6 +164,7 @@ export const staticRules: Rule[] = [
   jwtWeakVerification,
   spoofableClientIp,
   jwtAlgNone,
+  weakRandomToken,
   webhookSignature,
   externalScriptSri,
   testSchemaDivergence,

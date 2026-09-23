@@ -108,6 +108,22 @@ export const sensitiveDataPlaintext: StaticRule = {
           continue;
         // Comment lines → not a real schema or persistence flow, drop.
         if (/^\s*(\/\/|\*|\/\*)/.test(raw)) continue;
+        // TİP BİLDİRİMİ DEPOLAMA DEĞİLDİR (gerçek vaka, 2026-09-22):
+        //   `private readonly config: () => { apiKey: string ... }` — bir hukuk SaaS llm.ts
+        //   `const diagnosis: string[] = []` — report.ts
+        // sensitive ad + "string" kelimesi TİP iken bulgu üretiliyordu (2 FP).
+        // Değer bir tür adı / boş başlatıcıysa satır atlanır — şema dosyalarında
+        // DEĞİL (orada `apiKey String` gerçek plaintext kolonudur).
+        // Sınır: yalnız const/readonly ALAN bildirimleri. Fonksiyon imza
+        // satırları (export async function listSites(fetchFn: FetchLike...))
+        // ATLANMAZ — oradaki ': string' parametre tipidir ama satır gerçek bir
+        // bulgunun kanıtı olabilir (gsc.ts:755 TP'si canary'den geldi).
+        if (!schema && !/\bfunction\b/.test(raw) &&
+            (/(?:const|readonly)\s+\w+\s*:\s*(?:string(?:\[\])?|number|boolean|object|Date|Buffer|Record<[^>]*>|Promise<[^>]*>)\b/i.test(raw) ||
+             /readonly\s+\w+\s*:\s*\(/.test(raw)) &&
+            !/["'`]|process\.env|import\.meta/.test(raw)) {
+          continue;
+        }
 
         // (A) Schema/migration: a plaintext column with a sensitive name.
         // This is ONLY a DDL column definition — there is no evidence of a real

@@ -17,7 +17,7 @@ import { callsAuthHelper, collectAuthHelpers } from "../core/auth-helpers.js";
  * zaman kapısız tek bir fonksiyon, oturum açan HERKESE bütün müşterilerin verisini
  * açar.
  *
- * GERÇEK VAKA (yanindapos, 2026-09-05): vendor paneli `lib/admin/*` bilinçli olarak
+ * GERÇEK VAKA (bir rezervasyon SaaS, 2026-09-05): vendor paneli `lib/admin/*` bilinçli olarak
  * tenant kapsamı dışında çalışıyor (amaç zaten tüm işletmeleri görmek) ve bağlantı
  * rolü RLS'i atlıyor. Oradaki TEK koruma `requireAdmin()`. Denetimde 5/5 fonksiyonun
  * kapıdan geçtiği doğrulandı — ama kapısız bir fonksiyon eklemek tek satırlık bir

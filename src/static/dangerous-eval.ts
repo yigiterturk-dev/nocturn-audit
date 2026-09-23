@@ -183,7 +183,7 @@ export const dangerousEval: StaticRule = {
        * config nesnesinin anahtarlarından kurulur; istek verisi girmez.
        *
        * Bu dosya binlerce projeye AYNI şekilde kopyalanıyor: portföy taramasında
-       * TEK BAŞINA 6 projede "kesin HIGH" üretti (neuroscope, nocturn-hub,
+       * TEK BAŞINA 6 projede "kesin HIGH" üretti (neuroscope, bir kokpit panosu,
        * nocturn-lifeos, voice-agent-template, nocturn-youtube-automation,
        * Aysira DM AI). Aynı satıcı dosyası için altı ayrı "acil" satırı, gerçek
        * bulguları listede görünmez yapar.

@@ -1,7 +1,7 @@
 {
   "name": "nocturn-audit",
   "version": "0.1.0",
-  "description": "Security audit CLI with measured precision: OWASP Top 10 rules, a synthetic canary for recall, and a CI gate that stops precision from regressing.",
+  "description": "Security audit CLI that measures its own accuracy — OWASP Top 10 rules, a labelled precision corpus, a synthetic canary, and a CI gate that stops precision from regressing. Detection and reporting only.",
   "type": "module",
   "bin": {
     "nocturn-audit": "dist/cli.js"
@@ -26,7 +26,8 @@
     "new-rule": "npm run build --silent && node dist/cli.js new-rule",
     "diff": "node dist/cli.js diff",
     "audit": "npm run build --silent && node dist/cli.js scan",
-    "verify": "npm run build --silent && npm test --silent && node dist/cli.js precision --ci"
+    "verify": "npm run build --silent && npm test --silent && node dist/cli.js precision --ci",
+    "jev-triyaj": "node scripts/jev-triyaj.mjs"
   },
   "dependencies": {
     "commander": "^12.1.0",
@@ -50,24 +51,31 @@
     "url": "https://github.com/yigiterturk-dev/nocturn-audit/issues"
   },
   "keywords": [
-    "security",
-    "sast",
-    "owasp",
     "audit",
-    "pentest",
-    "static-analysis",
-    "cli",
-    "nextjs",
-    "supabase",
     "ci",
+    "cli",
+    "flask",
+    "kvkk",
+    "measurement",
+    "nextjs",
+    "owasp",
+    "pentest",
+    "precision",
+    "sast",
     "secrets",
+    "security",
+    "static-analysis",
+    "supabase",
+    "turkish",
     "vulnerability-scanner"
   ],
   "files": [
     "dist",
+    "docs",
+    "corpus/projects.example.json",
     "targets.example.json",
     "README.md",
-    "LICENSE"
-  ],
-  "private": true
+    "SECURITY.md",
+    "action.yml"
+  ]
 }

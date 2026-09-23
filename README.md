@@ -126,6 +126,54 @@ a committed `.env`, a provider key literal, an expired certificate. `likely`
 findings are heuristic and want a human. The summary counts them separately,
 because a scanner that mixes them trains you to ignore it.
 
+## The Shannon core: one maths for every randomness claim
+
+`src/core/shannon.ts` is the tool's measurement brain. Every rule that asks
+"how random is this string, really?" measures through one module instead of a
+private copy:
+
+| Measure | Answers |
+|---|---|
+| `shannonEntropy` | H in bits/char — how surprised are we by the next character |
+| `normalizedEntropy` | random **for its own alphabet** — a hex string can never exceed 4 bits/char |
+| `keyspaceBits` | the brute-force budget of the whole string (64/112-bit bands) |
+| `maxRun` / `dgaLikeness` | structure entropy cannot see: `aaaa…`, algorithmically generated hosts |
+
+Powered by it: the hardened hardcoded-secret rule (its findings now carry
+measured numbers), and `a07-weak-random-token` — tokens derived from
+`Math.random()` / `Date.now()`, and CSPRNG draws whose **measured keyspace** is
+below the token floor (`randomBytes(8)` = 64 bits = marginal, whatever the
+source).
+
+## The pislik score: comparable dirtiness
+
+`score` is an unbounded weighted sum. The **pislik score** (0-100) normalises
+it — `min(100, raw × 2)` — so projects of different sizes are comparable:
+*tertemiz / tozlu / kirli / pis / çok pis / biyolojik tehlike*.
+
+One honesty rule, same as everything else here: when a rule could not run, the
+score is a **lower bound** and the report says `(kısmi ölçüm)` — a 0 with gaps
+is not "clean", it is "the measured part is clean".
+
+## LLM triage — Jev first
+
+`--ai` triages high/critical findings with an LLM. The provider is chosen by
+environment: **Jev** (`JEV_AI_API_KEY`, same contract as legafetch's
+`jev_mevzuat.py` — `{model, state, questions}` → typed answers) with OpenAI as
+the fallback (`OPENAI_API_KEY`).
+
+House doctrine, mirrored from legafetch: **Jev does not do arithmetic** — it
+receives only finding text and evidence; the 0.5 threshold lives in code. If
+Jev is unreachable, triage is skipped and the scan is unaffected. Triage never
+touches the precision corpus; to pre-triage **unlabelled corpus findings** run
+
+```bash
+JEV_AI_API_KEY=... npm run jev-triyaj            # writes corpus/jev-oneri-<date>.md (+json)
+```
+
+It produces a review sheet of AI-suggested verdicts. You label `labels.json`
+by hand — the corpus stays human-verified by design.
+
 ## Coverage
 
 OWASP Top 10 (2021), plus two families of rules that came out of running real

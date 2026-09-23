@@ -22,7 +22,7 @@ import type { StaticRule } from "../core/rule.js";
  *      const bugun = new Date().toISOString().slice(0, 10);
  *    UTC+3'te gece 00:00–03:00 arası bu değer DÜNÜ gösterir.
  *
- * GERÇEK VAKA (yanindapos, 2026-09-05 — canlı tıklama testinde bulundu, hiçbir
+ * GERÇEK VAKA (bir rezervasyon SaaS, 2026-09-05 — canlı tıklama testinde bulundu, hiçbir
  * birim test görmemişti):
  *   - Rezervasyon takvimindeki 7 günlük şerit bugünden değil DÜNDEN başlıyordu ve
  *     dünün bütün saatleri "müsait" görünüyordu → müşteri geçmişe randevu alabiliyordu.
@@ -46,9 +46,17 @@ const isJsTs = (f: string) =>
 // Tarih-only kesme: .slice(0, 10) → gün, .slice(0, 7) → ay.
 const KESME = /toISOString\(\)\s*\.\s*slice\(\s*0\s*,\s*(10|7)\s*\)/;
 // Kasıtlı UTC aritmetiği — bu bir hata değil.
-const UTC_KASITLI = /Date\.UTC\s*\(/;
+// - Date.UTC(...) klasik biçim;
+// - `T00:00:00Z` parse'ı: Z'li gece yarısı kasıtlı UTC tabanıdır (gerçek vaka —
+//   bir marka yonetim SaaS, 2026-09-22: inclusiveDateKeys `Date.parse(until + 'T00:00:00Z')`
+//   ile tutarlı UTC gün anahtarları üretiyordu, kural "kayma" sandı);
+// - setUTC*/getUTC*: geliştirici UTC'de çalıştığını AÇIKÇA söylüyor.
+const UTC_KASITLI = /Date\.UTC\s*\(|T00:00:00Z|\.setUTC(?:Date|Month|FullYear)\s*\(|getUTC(?:Date|Month|FullYear)\s*\(/;
 // Yerel gece yarısı üretimi ya da yerel alan mutasyonu.
-const YEREL_URETIM = /(T00:00:00|\.setDate\s*\(|\.setMonth\s*\(|\.setFullYear\s*\(|new Date\s*\(\s*\w+\s*\.\s*getFullYear)/;
+// ⚠️ T00:00:00(?!Z): Z'siz gece yarısı YERELDİR (kayma üretir); Z'li form
+// kasıtlı UTC'dir ve kasıtlı sinyal olarak yukarıda zaten var. Ayrım şart —
+// Z'siz desen Z'liyi de tutuyordu ve doğru kod yanlış pozitif üretiyordu.
+const YEREL_URETIM = /(T00:00:00(?!Z)|\.setDate\s*\(|\.setMonth\s*\(|\.setFullYear\s*\(|new Date\s*\(\s*\w+\s*\.\s*getFullYear)/;
 // Argümansız `new Date()` → "şu an", UTC gününe çevriliyor.
 const SIMDI = /new Date\s*\(\s*\)/;
 

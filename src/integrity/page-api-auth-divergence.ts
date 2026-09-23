@@ -80,6 +80,16 @@ export const pageApiAuthDivergence: StaticRule = {
       // A page that calls no auth at all may be public; not this rule's subject.
       if (!kume.size) continue;
 
+      // ROL KAPILI SAYFA = PERSONEL YÜZEYİ (gerçek vaka, 2026-09-22 —
+      // bir e-ticaret CRM projesi app/basit/musteri, 1 FP): yol "/musteri" içeriyor diye
+      // sayfa müşteri portalı DEĞİLDİR — personelin müşteri LİSTESİDİR. Sayfa
+      // rol kapısı çağırıyorsa (getUserRole/isPatron/rol denetimi) kitlesi
+      // personeldir; müşteri/tenant/owner öznesi uygulanmaz. Yol adından
+      // kitle çıkarsamak yalnız portal desenlerinde güvenilirdir.
+      const rolKapili =
+        /\b(getUserRole|isPatron|isYonetim|requireRole|hasRole|yetkiKontrol)\s*\(/.test(content);
+      if (rolKapili && ozne.ad !== "portal user") continue;
+
       // Is there a helper serving this subject, and does the page call it?
       const ozneninYardimcilari = [...yardimcilar].filter((ad) => ozne.yardimci.test(ad));
       if (!ozneninYardimcilari.length) continue;

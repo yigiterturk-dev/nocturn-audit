@@ -11,7 +11,7 @@ import type { StaticRule } from "../core/rule.js";
  * silinmesi, sağlayıcı sorunu — o yedek de birlikte gider. Müşteri verisi tutan bir
  * üründe en az bir tane hesap dışı kopya olmalıdır.
  *
- * GERÇEK VAKA (yanindapos, 2026-09-05): ürün canlıydı, satışa hazırlanıyordu ve
+ * GERÇEK VAKA (bir rezervasyon SaaS, 2026-09-05): ürün canlıydı, satışa hazırlanıyordu ve
  * HİÇBİR yedeği yoktu. Dahası, yedek almayı denediğimizde alınamadığı ortaya çıktı:
  * Neon PostgreSQL 18 çalıştırıyor, yereldeki `pg_dump` 16'ydı ve
  * "aborting because of server version mismatch" verip SIFIR BAYT üretiyordu.

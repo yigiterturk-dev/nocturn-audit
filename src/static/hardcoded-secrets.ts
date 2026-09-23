@@ -1,5 +1,6 @@
 import type { Finding } from "../core/finding.js";
 import { fileEvidence } from "../core/finding.js";
+import { profile } from "../core/shannon.js";
 import type { StaticRule } from "../core/rule.js";
 
 /**
@@ -47,16 +48,9 @@ const PLACEHOLDER =
 // Kabuk/komut sözdizimi — bir sır değeri asla böyle görünmez.
 const SHELL_IFADESI = /\$\(|\$\{|\||\/dev\/null|\bgrep\b|\bcut\b|\bsed\b|\bawk\b|\bcurl\b|2>|&&/;
 
-const shannon = (s: string): number => {
-  const freq: Record<string, number> = {};
-  for (const c of s) freq[c] = (freq[c] ?? 0) + 1;
-  let h = 0;
-  for (const c in freq) {
-    const p = freq[c] / s.length;
-    h -= p * Math.log2(p);
-  }
-  return h;
-};
+// Yerel 6 satırlık shannon kopyası kaldırıldı — ölçüm artık TEK yerden:
+// core/shannon.ts ("Shannon kafası"). Aynı matematik; üstelik normalize
+// entropi ve keyspace de ölçülüp rapora yazılıyor.
 
 // A real env file (.env, .env.local, .env.production …) — excluding .example/.sample/.template.
 const ENV_FILE = /(^|\/)\.env(\.[\w.-]+)?$/;
@@ -142,24 +136,26 @@ export const hardcodedSecrets: StaticRule = {
           if (isEnvVarName(value)) continue;
           // Sırrı OKUYAN komut, sırrın KENDİSİ değildir.
           //
-          // Gerçek vaka (yanindapos ops betikleri, 3 sahte HIGH): kabuk satırı
+          // Gerçek vaka (bir rezervasyon SaaS ops betikleri, 3 sahte HIGH): kabuk satırı
           //   T="$(grep -m1 -E '^TELEGRAM_(BOT_)?TOKEN=' /root/jarvis/.env | cut -d= -f2-)"
           // `TOKEN='` desenine uyuyor ve tırnak içindeki KOMUT yüksek entropili bir
           // "değer" sanılıyordu. Oysa satır sırrı bir dosyadan okuyor — kodda sır yok.
           // Ayrım basit ve güvenilir: bir anahtar/parola BOŞLUK içermez, kabuk
           // sözdizimi hiç içermez.
           if (/\s/.test(value) || SHELL_IFADESI.test(value)) continue;
-          if (value.length >= 16 && shannon(value) >= 3.5) {
+          if (value.length >= 16 && profile(value).entropyBits >= 3.5) {
             const key = `${file}:${i}:entropy`;
             if (seen.has(key)) continue;
             seen.add(key);
+            // Ölçüm görünsün: "yüksek entropi" bir iddia değil, bir sayıdır.
+            const prof = profile(value);
+            const measure = `Measured: ${prof.entropyBits.toFixed(2)} bits/char, normalized ${prof.normalized.toFixed(2)} for its ${prof.klass} alphabet, keyspace ${Math.round(prof.keyspaceBits)} bits.`;
             findings.push({
               ruleId: this.id,
               title: `${this.title} — high-entropy literal`,
               owasp: this.owasp,
               severity: "high",
-              description:
-                "A high-entropy literal is assigned to a sensitively named variable (secret/token/password/api_key). This is probably a real secret.",
+              description: `A high-entropy literal is assigned to a sensitively named variable (secret/token/password/api_key). This is probably a real secret. ${measure}`,
               evidence: [fileEvidence(file, i + 1, raw.replace(value, value.slice(0, 4) + "…redacted"))],
               remediation:
                 "Move the value to an environment variable, delete the literal, and rotate it if it is a real secret.",

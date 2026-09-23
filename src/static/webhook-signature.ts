@@ -1,6 +1,7 @@
 import type { Finding } from "../core/finding.js";
 import { fileEvidence } from "../core/finding.js";
 import type { StaticRule } from "../core/rule.js";
+import { collectDogrulamaHelperlari } from "../core/gate-helpers.js";
 
 /**
  * A08 — an unverified webhook.
@@ -30,13 +31,20 @@ export const webhookSignature: StaticRule = {
   requires: [],
   run(ctx): Finding[] {
     const findings: Finding[] = [];
+    // PROJENİN KENDİ doğrulama kapıları (gerçek vaka: isWebhookAuthorized,
+    // verifySnsSignature — her proje farklı isimle kapı yazıyor; sabit desen
+    // listesi yerine gövde-sinyalli keşif: core/gate-helpers.ts).
+    const kapilar = collectDogrulamaHelperlari(ctx);
     for (const file of ctx.files) {
       if (!isWebhookRoute(file)) continue;
       const content = ctx.read(file);
       if (!content) continue;
       const provider = PROVIDER.test(content) || PROVIDER.test(file);
       if (!provider) continue;
-      if (SIGNATURE_VERIFY.test(content)) continue;
+      const dosyaKapisi = [...kapilar].some(
+        (ad) => new RegExp(`\\b${ad}\\s*\\(`).test(content),
+      );
+      if (SIGNATURE_VERIFY.test(content) || dosyaKapisi) continue;
 
       findings.push({
         ruleId: this.id,

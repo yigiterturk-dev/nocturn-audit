@@ -1,0 +1,37 @@
+name: 🟡 False positive report
+description: The tool reported a finding that is not a real issue
+labels: ["false-positive", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        False positives are the most valuable issues this repo gets — they feed
+        the precision corpus. Thank you for reporting one.
+  - type: input
+    id: rule
+    attributes:
+      label: Rule ID
+      description: e.g. a02-hardcoded-secret
+    validations:
+      required: true
+  - type: textarea
+    id: code
+    attributes:
+      label: The flagged code (redact any real secrets first!)
+      placeholder: |
+        src/app/api/x/route.ts:12
+        const token = ...
+    validations:
+      required: true
+  - type: textarea
+    id: why
+    attributes:
+      label: Why is this safe?
+      description: e.g. "the middleware protects this route", "it is a test fixture"
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version / install method
+      placeholder: npx github:yigiterturk-dev/nocturn-audit#v0.1.2

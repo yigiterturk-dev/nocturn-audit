@@ -63,9 +63,16 @@ export const unguardedJsonParse: StaticRule = {
       if (!isSourceLike(m.file)) continue;
       const content = ctx.read(m.file);
       if (!content) continue;
+      // KENDİ JSON ARAYÜZÜNÜ IMPLEMENTE EDEN dosya (gerçek vaka, 2026-09-23 —
+      // flask src/flask/json/provider.py: `return json.loads(s, **kwargs)` —
+      // sağlayıcı loads'un KENDİ implementasyonudur; aynayı kırık sanmak olur).
+      if (/\.py$/.test(m.file) && /def\s+loads\s*\(/.test(content)) continue;
       const lines = content.split(/\r?\n/);
       const idx = m.line - 1;
       const line = lines[idx] ?? "";
+      // .py reST docstring alanı (`:meth:` app.json.loads()`) — belge metnidir,
+      // çağrı değil (gerçek vaka: flask json/__init__.py:81, 1 FP).
+      if (/^\s*:(?:meth|func|class|mod)/.test(line)) continue;
 
       // A constant literal argument -> an incorruptible source, skip.
       if (LITERAL_ARG.test(line)) continue;

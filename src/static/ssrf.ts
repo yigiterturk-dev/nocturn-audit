@@ -121,6 +121,8 @@ function parametreMi(lines: string[], i: number, ad: string): boolean {
   return false;
 }
 
+const TEMPLATE_YUZEY = /\.(html|hbs|ejs|pug|jinja|j2|vue|svelte)$|(^|\/)templates?\//i;
+
 export const ssrf: StaticRule = {
   id: "a10-ssrf-user-controlled-request",
   title: "Possible SSRF: server request built from user input",
@@ -128,12 +130,20 @@ export const ssrf: StaticRule = {
   severity: "medium",
   kind: "static",
   // No preconditions: relies on reading files.
+  /**
+   * SSRF bir SUNUCU tarafı zaafıdır: sunucu, saldırganın yönlendirdiği bir
+   * adresi kendi ağından çeker. Tarayıcı yüzeyindeki `fetch()` (template,
+   * client JS) bunun tersidir — kullanıcının kendi tarayıcısı zaten dışarı
+   * çıkar. (gerçek vaka, 2026-09-23: flask celery örneğindeki Jinja template
+   * içindeki fetch(event.target.action) SSRF sanıldı — 1 FP.)
+   */
   requires: [],
   // Pattern-based detection (that input really reaches an external URL needs manual confirmation).
   confidence: "likely",
   run(ctx): Finding[] {
     const findings: Finding[] = [];
     for (const file of ctx.files) {
+      if (TEMPLATE_YUZEY.test(file)) continue;
       if (/(test|spec|fixtures?)/.test(file)) continue;
       const f = file.replace(/\\/g, "/");
       // server side: api/route/actions/lib

@@ -16,6 +16,15 @@ type SigKind = "dom" | "eval" | "cmd";
 interface Sig {
   re: RegExp;
   /**
+   * İkinci koşul: eşleşen satır bu deseni DE içeriyorsa bulgu üretilmez.
+   * execfile-idiom kaçışı (gerçek vaka, 2026-09-23 — flask cli/config, 2 FP):
+   * `eval(compile(f.read(), name, "exec"))` Python'un "dosyadan python çalıştır"
+   * kalıbıdır (PYTHONSTARTUP, app.config.from_pyfile) — dosya yolu
+   * GELİŞTİRİCİ kontrolündedir (env/config), saldırgan girdisi değildir;
+   * girdiden gelen taint taint motorunun işidir.
+   */
+  kacis?: RegExp;
+  /**
    * This signature is derived FROM THE TREE; text search only kicks in when the
    * tree cannot be built. The value says which set of the tree to use — two
    * signatures can share a `kind` (`eval()` and `new Function()`), and if both
@@ -58,6 +67,13 @@ const SIGS: Sig[] = [
     // gevent `.spawn(...)` — nokta öncesi nesne çağrısıdır, free function değil.
     // Sadece serbest duran exec/spawn (modül çağrısı) yakalanır.
     re: /child_process|(?<![.\w])exec(Sync)?\s*\(|(?<![.\w])spawn(Sync)?\s*\(/,
+    kacis: /eval\s*\(\s*compile\s*\(\s*\w+\.read\(\s*\)\s*,[^,]+,\s*["']exec["']\s*\)/,
+    // execfile-idiom kaçışı (gerçek vaka, 2026-09-23 — flask cli/config, 2 FP):
+    // `eval(compile(f.read(), name, "exec"))` Python'un "dosyadan python çalıştır"
+    // kalıbıdır (PYTHONSTARTUP, app.config.from_pyfile) — dosya yolu
+    // GELİŞTİRİCİ kontrolündedir (env/config), saldırgan girdisi değildir.
+    // Saldırgan girdisinden gelen taint, taint motorunun işidir.
+    escape: /eval\s*\(\s*compile\s*\(\s*\w+\.read\(\s*\)\s*,[^,]+,\s*["']exec["']\s*\)/,
     kind: "cmd",
     treeSet: "cmd",
     title: "child_process / command execution",
@@ -224,6 +240,8 @@ export const dangerousEval: StaticRule = {
           } else if (!sig.re.test(raw)) {
             continue;
           }
+          // Kaçış (execfile-idiom): satır kaçış desenini içeriyorsa bulgu yok.
+          if (sig.kacis && sig.kacis.test(raw)) continue;
           const window = lines.slice(Math.max(0, i - 2), i + 4).join("\n");
           const inputNear = INPUT_HINT.test(window);
 

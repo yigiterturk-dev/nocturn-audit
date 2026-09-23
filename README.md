@@ -1,14 +1,35 @@
+[![verify](https://github.com/yigiterturk-dev/nocturn-audit/actions/workflows/verify.yml/badge.svg)](https://github.com/yigiterturk-dev/nocturn-audit/actions/workflows/verify.yml)
+[![precision](https://img.shields.io/badge/precision-measured%20%26%20published-brightgreen)](#why-another-scanner)
+[![license](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
+[![OWASP](https://img.shields.io/badge/OWASP%20Top%2010-mapped-orange)]()
+
 # nocturn-audit
 
-A security audit CLI that **measures its own accuracy**.
+A security audit CLI that **measures its own accuracy** — and publishes the
+number. Most scanners answer "how many findings did I produce"; this one also
+answers *how many of them are real*, *what did it miss*, and *what could it
+not look at*.
 
 OWASP Top 10 (2021) mapped. Detection and reporting only — no exploitation,
-no DoS, no evasion.
+no DoS, no evasion. Turkish personal-data (KVKK) rules included.
 
 ```bash
 npx github:yigiterturk-dev/nocturn-audit init   # create targets.json
 npx github:yigiterturk-dev/nocturn-audit scan   # scan it
 ```
+
+## What the output looks like
+
+```text
+  my-shop  C:0 H:0 M:8 L:1 I:3  score:25  50/100 filthy (partial measurement)
+           (partial measurement — 2 rule(s) could not run; true dirtiness ≥ this)
+  owned  [next/postgres]
+```
+
+Every project gets a **dirtiness score (0-100)** with honest bands —
+`spotless → dusty → dirty → filthy → very dirty → biohazard`. When a rule
+could not run (missing schema, not a git repo…), the score is reported as a
+**lower bound**, never as "clean".
 
 ## Why another scanner
 

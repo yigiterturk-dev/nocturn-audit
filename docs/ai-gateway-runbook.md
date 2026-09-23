@@ -6,7 +6,7 @@ Tüm Nocturn projelerinin Jev (LLM) + Laya (karar motoru) erişimi tek kapıdan.
 
 ```bash
 AI_GATEWAY_URL=https://ai.nocturndev.com
-AI_GATEWAY_KEY=7d3ba0c0dc335663cc0d70f332d8d628e4d079c51e361a9e
+AI_GATEWAY_KEY=<netcup /opt/ai-gateway/.env içinde — repoya YAZILMAZ>
 ```
 
 ## Uçlar

@@ -53,7 +53,11 @@ const SIGS: Sig[] = [
     fix: "Remove the dynamic code generation and express it as static logic.",
   },
   {
-    re: /child_process|\bexec(Sync)?\s*\(|\bspawn(Sync)?\s*\(/,
+    // ⚠️ `.exec(` METOD ÇAĞRISI DEĞİLDİR (gerçek vaka, 2026-09-23 — dış-precision
+    // deneyi, 13 FP): SQLModel `session.exec(statement)`, RegExp `.exec(...)`,
+    // gevent `.spawn(...)` — nokta öncesi nesne çağrısıdır, free function değil.
+    // Sadece serbest duran exec/spawn (modül çağrısı) yakalanır.
+    re: /child_process|(?<![.\w])exec(Sync)?\s*\(|(?<![.\w])spawn(Sync)?\s*\(/,
     kind: "cmd",
     treeSet: "cmd",
     title: "child_process / command execution",

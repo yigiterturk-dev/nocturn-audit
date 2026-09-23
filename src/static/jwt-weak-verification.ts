@@ -83,8 +83,14 @@ export const jwtWeakVerification: StaticRule = {
         }
 
         // authorisation from a decode-only result: no verify in the file, and the decoded claims drive auth or role
-        if (DECODE_ONLY.test(raw) && !fileHasVerify) {
-          const around = lines.slice(i, i + 5).join("\n");
+        // ⚠️ DİL AYRIMI (gerçek vaka, 2026-09-23 — dış-precision deneyi, 1 FP):
+        // Python'da PyJWT'nin `jwt.decode(token, key, algorithms=[...])` çağrısı
+        // imzayı DOĞRULAR (JS jsonwebtoken'un decode-only'sinden farklı!). .py
+        // dosyasında anahtar + algorithms= ile çağrılan decode zayif değildir.
+        const around = lines.slice(i, i + 5).join("\n");
+        const isPyJwtDecode =
+          /\.py$/.test(file) && /algorithms\s*=/.test(around);
+        if (DECODE_ONLY.test(raw) && !fileHasVerify && !isPyJwtDecode) {
           if (/(role|userId|user_id|isAdmin|admin|sub|permission|auth)/i.test(around)) {
             findings.push({
               ruleId: this.id,

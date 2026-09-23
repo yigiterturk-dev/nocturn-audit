@@ -133,7 +133,7 @@ export function printReport(reports: ProjectReport[], verbose = false): void {
       );
     }
     if (!verbose && findings.length > shown.length) {
-      console.log(pc.dim(`     … +${findings.length - shown.length} bulgu daha (HTML raporda)`));
+      console.log(pc.dim(`     … +${findings.length - shown.length} more finding(s) (see the HTML report)`));
     }
     if (findings.length === 0) {
       console.log(pc.green("     ✓ no findings"));

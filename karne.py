@@ -10,6 +10,7 @@ Kullanım:
   (rapor-json verilmezse son report/*.json kullanılır)
 """
 import json, os, sys, glob, time, urllib.request, urllib.error
+import csv
 
 GW = os.environ.get("AI_GATEWAY_URL", "https://ai.nocturndev.com").rstrip("/")
 KEY = os.environ.get("AI_GATEWAY_KEY", "")
@@ -62,7 +63,31 @@ for f in onemli[:8]:
         f" {baslik}</div><div class='b-oneri'>Öneri: {oneri}</div></div>")
 kesit_html = "".join(kesitler) or "<div class='bulgu ok'>Öne çıkan açıklık bulunmadı — tertemiz iş. 👌</div>"
 
-nobet_html = ""
+# SEO: linkanaliz çıktıları varsa (pagerank + link önerileri CSV'leri) ekle
+seo_html = ""
+_kisa = PROJE.replace("https://", "").replace("/", "_")
+_pr_csv = f"pagerank-{_kisa}-{time.strftime('%Y-%m-%d')}.csv"
+_lnk_csv = f"link-oneri-{_kisa}-{time.strftime('%Y-%m-%d')}.csv"
+# linkanaliz site adını .com ile de yazabilir (gelecekfinans.com) — glob ile eşle
+_pr_glob = glob.glob(f"pagerank-{PROJE}*-{time.strftime('%Y-%m-%d')}.csv")
+if _pr_glob and not os.path.exists(_pr_csv): _pr_csv = _pr_glob[0]
+_lnk_glob = glob.glob(f"link-oneri-{PROJE}*-{time.strftime('%Y-%m-%d')}.csv")
+if _lnk_glob and not os.path.exists(_lnk_csv): _lnk_csv = _lnk_glob[0]
+try:
+    _satirlar = list(csv.DictReader(open(_pr_csv, encoding="utf-8-sig")))
+    _orfan = [x for x in _satirlar if x.get("orphan") == "EVET"]
+    _top = sorted(_satirlar, key=lambda x: -float(x.get("pagerank", 0)))[:3]
+    _oneriler = list(csv.DictReader(open(_lnk_csv, encoding="utf-8-sig"))) if os.path.exists(_lnk_csv) else []
+    _toplar = ", ".join(
+        f"{(x['url'].rstrip('/').split('/')[-1] or '/')} ({x['pagerank']})" for x in _top)
+    seo_html = (
+        f"<div class='kutu nobet'><b>Değerli sayfalar (PageRank):</b> {_toplar}</div>"
+        f"<div class='bulgu {'ok' if not _orfan else ''}'>{len(_orfan)} orphan sayfa "
+        f"(içten linki yok) · {len(_oneriler)} internal link önerisi "
+        f"(<code>{_lnk_csv}</code>)</div>")
+except Exception:
+    seo_html = ""
+
 if n:
     nobet_html = f"""<div class='kutu nobet'>
 <b>Nöbet durumu:</b> {n['ses']} · son kalp {round(n['sure_sn']/60)} dk önce · SSL: {n.get('ssl_gun','?')} gün · son yedek: {n.get('yedek_gun','?')} gün önce</div>"""
@@ -99,6 +124,8 @@ h2{{color:#7dd3fc;font-size:16px;border-bottom:1px solid #1e293b;padding-bottom:
 {nobet_html or '<div class="bulgu">Nöbet verisi bu proje için henüz toplanmıyor — bakım paketi kapsamına alınabilir.</div>'}
 <h2>Öne çıkan bulgular ve öneriler</h2>
 {kesit_html}
+<h2>SEO — Internal Link Durumu</h2>
+{seo_html}
 <h2>Sonraki adım</h2>
 <p>Bu karnenin tüm teknik detayları nocturndev ekibinde saklanır. Sorularınız için:
 <b>sales@nocturndev.com</b></p>

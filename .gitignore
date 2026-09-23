@@ -1,0 +1,22 @@
+node_modules/
+/dist/
+/report/
+*.log
+.DS_Store
+
+# sır dosyaları — asla izlenmez
+.env
+.env.*
+!.env.example
+
+# takma-ad sozlugu (yerel, asla yayinlanmaz)
+.codenames.local.json
+
+# private measurement data — never published
+/targets.json
+/corpus/labels.json
+/corpus/bug-db.json
+/corpus/projects.json
+
+# the canary bait file is a fixture, not a secret — it must stay tracked
+!test/canary/.env.local.bak

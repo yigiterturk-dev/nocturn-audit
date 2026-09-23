@@ -1,0 +1,25 @@
+{
+  "$comment": "Live probes run ONLY against targets with owned:true. Keep owned:false unless you are authorised to test that host. Leave `stack` empty to auto-detect it from package.json / pyproject.toml.",
+  "projects": [
+    {
+      "name": "my-web-app",
+      "path": "~/code/my-web-app",
+      "url": "https://my-web-app.example.com",
+      "owned": true,
+      "stack": {
+        "framework": "next",
+        "db": "supabase",
+        "auth": "clerk"
+      }
+    },
+    {
+      "name": "my-api",
+      "path": "~/code/my-api",
+      "owned": false,
+      "stack": {
+        "framework": "flask",
+        "db": "sqlite"
+      }
+    }
+  ]
+}

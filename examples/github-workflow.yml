@@ -1,0 +1,22 @@
+# Example: drop this into .github/workflows/ of any repository you want scanned.
+name: security-audit
+
+on:
+  push:
+  pull_request:
+  schedule:
+    - cron: "0 6 * * 1"
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # git-history rules need the full history
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - uses: yigiterturk-dev/nocturn-audit@v0
+        with:
+          args: --static

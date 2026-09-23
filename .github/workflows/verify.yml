@@ -1,0 +1,46 @@
+# Rule-change gate.
+#
+# This workflow does NOT scan projects — it verifies the TOOL itself. Scanning
+# requires the target projects to exist on disk, and they do not exist in CI.
+# The question asked here is: "did this rule change break the tool?"
+name: verify
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # The git-history rules (leaked secrets) need the full history; on a
+          # shallow clone they silently find nothing — and look "clean".
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+      - run: npm run build
+
+      # 1) Fixtures: every rule's BAD (must catch) and CLEAN (must not) case.
+      - name: tests
+        run: npm test
+
+      # 2) Canary: a deliberately vulnerable project. Tighten a rule too far
+      #    and one of its holes escapes, breaking this step.
+      #    (It runs inside `npm test`; not invoked separately.)
+
+      # 3) The precision gate is only meaningful when the corpus projects are
+      #    on disk. They are not in CI, so the gate does NOT run here — and we
+      #    say so out loud rather than passing silently.
+      - name: precision gate (informational)
+        run: |
+          echo "The precision gate (precision --ci) DID NOT RUN in CI:"
+          echo "the corpus projects are not on this machine, so nothing can be measured."
+          echo "Run it locally with:  npm run verify"

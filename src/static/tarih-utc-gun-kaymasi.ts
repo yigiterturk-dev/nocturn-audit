@@ -74,7 +74,7 @@ function yorumsuz(kod: string): string[] {
 
 export const tarihUtcGunKaymasi: StaticRule = {
   id: "a04-tarih-utc-gun-kaymasi",
-  title: "Tarih/ay değeri toISOString() ile üretiliyor (saat dilimine göre gün kayar)",
+  title: "Date/month value built with toISOString() (shifts by a day across time zones)",
   owasp: "A04:2021-Insecure Design",
   severity: "medium",
   kind: "static",

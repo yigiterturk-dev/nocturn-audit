@@ -39,7 +39,7 @@ const isMetin = (f: string) =>
 
 export const yedekKanitiYok: StaticRule = {
   id: "a08-yedek-kaniti-yok",
-  title: "Canlı veri tutan projede hesap dışı yedek izi yok (doğrulanmalı)",
+  title: "Live-data project has no out-of-account backup evidence (verify manually)",
   owasp: "A08:2021-Software & Data Integrity Failures",
   severity: "info",
   kind: "static",

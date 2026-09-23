@@ -1,4 +1,5 @@
 import pc from "picocolors";
+import { userLang } from "../core/lang.js";
 import type { ProjectReport } from "../core/engine.js";
 import type { Finding } from "../core/finding.js";
 import { SEVERITY_ORDER, type Severity } from "../core/severity.js";
@@ -78,7 +79,11 @@ export function printReport(reports: ProjectReport[], verbose = false): void {
           ? pc.red(`${r.pislik.score}/100 ${r.pislik.label}`)
           : pc.yellow(`${r.pislik.score}/100 ${r.pislik.label}`);
     const gapNote = r.pislik.partial
-      ? pc.dim(`  (kısmi ölçüm — ${r.gaps.length} kural ölçülemedi, gerçek pislik ≥ bu)`)
+      ? pc.dim(
+          userLang() === "tr"
+            ? `  (kısmi ölçüm — ${r.gaps.length} kural ölçülemedi, gerçek pislik ≥ bu)`
+            : `  (partial measurement — ${r.gaps.length} rule(s) could not run; true dirtiness ≥ this)`,
+        )
       : "";
 
     console.log(

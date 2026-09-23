@@ -117,7 +117,7 @@ const REMEDIATION =
 
 export const icLinkAlakasizCapa: StaticRule = {
   id: "int-ic-link-alakasiz-capa",
-  title: "Otomatik iç bağlantı çapası/hedefi konuya bakmadan seçiliyor",
+  title: "Internal link anchor/target chosen without checking the topic",
   owasp: "A04:2021-Insecure Design",
   severity: "medium",
   kind: "static",

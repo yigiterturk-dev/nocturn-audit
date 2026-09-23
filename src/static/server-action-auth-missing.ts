@@ -88,7 +88,7 @@ function yorumsuz(kod: string): string {
 
 export const serverActionAuthMissing: StaticRule = {
   id: "a01-server-action-auth-missing",
-  title: "Server action veritabanına yetki kapısı olmadan dokunuyor",
+  title: "Server action writes to the database without an authorization gate",
   owasp: "A01:2021-Broken Access Control",
   severity: "high",
   kind: "static",

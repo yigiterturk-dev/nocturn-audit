@@ -1,7 +1,7 @@
 {
   "name": "nocturn-audit",
   "version": "0.1.0",
-  "description": "Security audit CLI that measures its own accuracy — OWASP Top 10 rules, a labelled precision corpus, a synthetic canary, and a CI gate that stops precision from regressing. Detection and reporting only.",
+  "description": "Security audit CLI with measured precision: OWASP Top 10 rules, a synthetic canary for recall, and a CI gate that stops precision from regressing.",
   "type": "module",
   "bin": {
     "nocturn-audit": "dist/cli.js"
@@ -51,31 +51,24 @@
     "url": "https://github.com/yigiterturk-dev/nocturn-audit/issues"
   },
   "keywords": [
-    "audit",
-    "ci",
-    "cli",
-    "flask",
-    "kvkk",
-    "measurement",
-    "nextjs",
-    "owasp",
-    "pentest",
-    "precision",
-    "sast",
-    "secrets",
     "security",
+    "sast",
+    "owasp",
+    "audit",
+    "pentest",
     "static-analysis",
+    "cli",
+    "nextjs",
     "supabase",
-    "turkish",
+    "ci",
+    "secrets",
     "vulnerability-scanner"
   ],
   "files": [
     "dist",
-    "docs",
-    "corpus/projects.example.json",
     "targets.example.json",
     "README.md",
-    "SECURITY.md",
-    "action.yml"
-  ]
+    "LICENSE"
+  ],
+  "private": true
 }

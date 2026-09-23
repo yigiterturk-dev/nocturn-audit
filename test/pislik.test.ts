@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, beforeEach } from "vitest";
 import {
   pislikSkoru,
   pislikEtiketi,
@@ -12,6 +12,9 @@ const counts = (partial: Partial<SeverityCounts>): SeverityCounts => ({
 });
 
 describe("pislikSkoru", () => {
+  beforeEach(() => {
+    process.env.NOCTURN_LANG = "tr"; // bu test dosyası Türkçe etiketleri doğrular
+  });
   it("0 bulgu = 0 pislik", () => {
     expect(pislikSkoru(emptyCounts()).score).toBe(0);
   });
@@ -49,5 +52,23 @@ describe("pislikSkoru", () => {
     expect(pislikEtiketi(45)).toBe("pis");
     expect(pislikEtiketi(70)).toBe("çok pis");
     expect(pislikEtiketi(100)).toBe("biyolojik tehlike");
+  });
+});
+
+describe("pislikSkoru — İngilizce (NOCTURN_LANG=en, halka açık varsayılan)", () => {
+  const eskiLang = process.env.NOCTURN_LANG;
+
+  it("varsayılan dil İngilizce'dir", () => {
+    delete process.env.NOCTURN_LANG;
+    const p = pislikSkoru(emptyCounts(), 2);
+    expect(p.label).toBe("spotless (partial measurement)");
+    process.env.NOCTURN_LANG = eskiLang ?? "tr";
+  });
+
+  it("EN bantları: biohazard tavanı", () => {
+    process.env.NOCTURN_LANG = "en";
+    expect(pislikEtiketi(0)).toBe("spotless");
+    expect(pislikEtiketi(45)).toBe("filthy");
+    expect(pislikEtiketi(100)).toBe("biohazard");
   });
 });

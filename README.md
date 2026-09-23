@@ -98,7 +98,7 @@ npx github:yigiterturk-dev/nocturn-audit init
 Pin a version with a tag, which is what you want in CI:
 
 ```bash
-npx github:yigiterturk-dev/nocturn-audit#v0.1.5 scan --static
+npx github:yigiterturk-dev/nocturn-audit#v0.1.6 scan --static
 ```
 
 Or clone and link it:

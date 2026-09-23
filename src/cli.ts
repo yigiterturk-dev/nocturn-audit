@@ -57,7 +57,13 @@ program
   .description(
     "Multi-project security audit tool based on OWASP Top 10 2021 (detection and reporting only)",
   )
-  .version("0.1.0");
+  .version(
+    // Read from package.json so the CLI can never report a version that is not
+    // the one installed — a hardcoded string silently lies after every bump.
+    JSON.parse(
+      readFileSync(new URL("../package.json", import.meta.url), "utf8"),
+    ).version as string,
+  );
 
 program
   .command("scan")

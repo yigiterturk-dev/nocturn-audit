@@ -47,3 +47,16 @@ proje → ai.nocturndev.com (Caddy TLS, netcup 159.195.158.36)
 | Timeout /laya'da | ufw kuralı: `allow from 172.18.0.0/16 to port 8100` |
 | Jev 401 upstream | JEV_UPSTREAM_KEY döndürülmüş olabilir → .env'de güncelle |
 | Sertifika sorunu | `docker restart legafetch-caddy` (backoff temizlenir) |
+
+## KAPI v1 ek uçlar (2026-09-23)
+
+| Uç | Ne yapar |
+|---|---|
+| `POST /nobet/beat` | kalp atışı (proje, durum, not) — 5 dk gelmezse "SESSIZ" |
+| `GET /nobet/durum` | tüm projelerin canlı/SESSIZ tablosu |
+| `POST /maske` | KVKK maskeleme: TCKN, IBAN, telefon, e-posta, ad-soyad |
+| `GET /sir/<proje>` | sır kasası okuma (yazma yalnız sunucuda: data/sirlar/<proje>.json) |
+| `POST /kota/<proje>` | kullanım sayacı |
+
+Servis: netcup `/opt/ai-gateway/kapi.py` (arşivi: `deploy/kapi.py`) · systemd `kapi.service` · 172.18.0.1:8787
+SDK: `nobetAt() nobetDurum() maskele() sirAl()` (TS+PY) — nocturn-gateway v0.1.1

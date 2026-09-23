@@ -18,6 +18,22 @@ npx github:yigiterturk-dev/nocturn-audit init   # create targets.json
 npx github:yigiterturk-dev/nocturn-audit scan   # scan it
 ```
 
+## Measured, as of 2026-09-23
+
+| What | Number | How it is measured |
+|---|---|---|
+| Precision on code I did not write | **82%** (18 TP / 4 FP) | 4 third-party repos: flask, express, full-stack-fastapi-template, vercel/commerce — [write-up](docs/dis-precision-2026-09-23.md) |
+| Precision on the labelled corpus | **81%** (95 TP / 22 FP) | 12 projects, hand-labelled; `nocturn-audit precision --ci` is a CI gate |
+| Recall, static | **48 of 70** static rules exercised | two deliberately vulnerable projects (`test/canary`, `test/canary-sqlite`) |
+| Recall, live | **10 of 13** live rules exercised | a deliberately vulnerable local server (`test/canli-sunucu.mjs`) |
+| Rules | **83** (70 static, 13 live) | OWASP Top 10 (2021) mapped |
+| Tests | **731** | `npm run verify` = build + tests + precision gate |
+
+On those third-party repos the first run scored **36%** — two findings out of
+three were noise. Five rule fixes later it is 82%, and the whole climb is in the
+write-up, wrong turns included. The number will drop again the next time a bad
+rule lands; that is what the gate is for.
+
 ## What the output looks like
 
 ```text

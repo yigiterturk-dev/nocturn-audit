@@ -16,6 +16,9 @@ npx nocturn-audit scan    # hepsini tara
 📘 **Ekip için:** [docs/EKIBE-BASLANGIC.md](docs/EKIBE-BASLANGIC.md) ·
 [docs/RAPOR-NASIL-OKUNUR.md](docs/RAPOR-NASIL-OKUNUR.md)
 
+**Bugünkü ölçüm (2026-09-23):** 83 kural (70 statik + 13 canlı) · 731 test ·
+dış-precision %82 (ilk koşuda %36'ydı) · `npm run verify` kapısı yeşil.
+
 ## Bu araç neyi farklı yapıyor
 
 Çoğu tarayıcı tek soruyu sorar: "desen eşleşti mi?". Bu araç dört soruyu
@@ -23,9 +26,10 @@ birden sorar ve dördünü de **ölçer**:
 
 | Soru | Nasıl cevaplanıyor | Şu anki değer |
 |---|---|---|
-| Bulduğu doğru mu? | Etiketli korpus (`npm run precision`) | **%100** (108/108) |
-| Kaçırdığı var mı? (statik) | Canary — kasten açık bırakılmış proje | 48 açık, 58 kuralın **%83**'ü (iki canary projesi) |
-| Kaçırdığı var mı? (canlı) | Canlı canary — kasten açık yerel sunucu | 10 canlı kuralın **%100**'ü |
+| Yazmadığım kodda doğru mu? | 4 yabancı repo (flask, express, fastapi-template, vercel/commerce) — [deney](docs/dis-precision-2026-09-23.md) | **%82** (18 TP / 4 FP) |
+| Bulduğu doğru mu? | Etiketli korpus (`npm run precision`) | **%81** (95 TP / 22 FP, 12 proje) |
+| Kaçırdığı var mı? (statik) | Canary — kasten açık bırakılmış iki proje | 70 statik kuralın **48**'i ölçülüyor |
+| Kaçırdığı var mı? (canlı) | Canlı canary — kasten açık yerel sunucu | 13 canlı kuralın **10**'u ölçülüyor |
 | Bakamadığı yer var mı? | Ölçüm sözleşmesi — kural ön koşulunu beyan eder | raporda "ölçülemedi" satırı |
 | Düzeltme gerçek mi? | `npm run fark` — dosya değişmediyse düzeltme sayılmaz | `exit 1` |
 

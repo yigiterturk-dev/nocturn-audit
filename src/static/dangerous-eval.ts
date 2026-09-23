@@ -73,7 +73,6 @@ const SIGS: Sig[] = [
     // kalıbıdır (PYTHONSTARTUP, app.config.from_pyfile) — dosya yolu
     // GELİŞTİRİCİ kontrolündedir (env/config), saldırgan girdisi değildir.
     // Saldırgan girdisinden gelen taint, taint motorunun işidir.
-    escape: /eval\s*\(\s*compile\s*\(\s*\w+\.read\(\s*\)\s*,[^,]+,\s*["']exec["']\s*\)/,
     kind: "cmd",
     treeSet: "cmd",
     title: "child_process / command execution",

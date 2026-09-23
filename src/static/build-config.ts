@@ -101,6 +101,13 @@ function resolvesTo(files: Set<string>, importer: string, spec: string): boolean
     else stack.push(p);
   }
   const base = stack.join("/");
+  // Paket köküne çözülen içe aktarma: `require('../..')` (gerçek vaka,
+  // 2026-09-23 — expressjs/express examples, 10 FP). Node bunu dizinin
+  // package.json main'ine ya da index.js'ine çözer; kural boş base'i
+  // "yok" sanıyordu. Kök dizin = proje kökü ise çözülmüştür.
+  if (base === "" || base === ".") {
+    return files.has("package.json") || files.has("index.js") || files.has("index.ts");
+  }
   const cands = [
     base,
     // .js/.jsx was written but the source may be TS (NodeNext ESM style)

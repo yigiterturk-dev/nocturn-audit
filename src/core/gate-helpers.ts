@@ -10,9 +10,10 @@
  *
  * Çözüm auth-helpers ile aynı: **fonksiyonun adına değil GÖVDESİNE bak.**
  * Gövdesi sırrı okuyup karşılaştıran/ HMAC kuran her fonksiyon = doğrulama
- * kapısı. İki geçiş: önce doğrudanlar, sonra onları çağıran sarmalayıcılar.
+ * kapısı. Motor core/kesif.ts'te; bu dosya doğrulama uzmanlığı.
  */
 import type { StaticContext } from "./rule.js";
+import { collectHelperlar } from "./kesif.js";
 
 /** Gövdede doğrulama sinyali: sır/token okuma + karşılaştırma imzası. */
 const DOGRULAMA_SINYALI =
@@ -21,42 +22,8 @@ const DOGRULAMA_SINYALI =
 const DOGRULAMA_ADI =
   /^(is|check|verify|validate|assert|ensure|authorize|has|doğrula|kontrol)\w*(authorized|signature|verify|hmac|token|secret|webhook|auth|kapı|yetki)\w*$/i;
 
-const TANIM =
-  /export\s+(?:async\s+)?function\s+(\w+)|(?:export\s+)?(?:async\s+)?function\s+(\w+)|(?:export\s+)?const\s+(\w+)\s*=\s*(?:async\s*)?\(|(?:export\s+)?const\s+(\w+)\s*=\s*\w+\s*\(/g;
+const SPEC = { ad: DOGRULAMA_ADI, sinyal: DOGRULAMA_SINYALI } as const;
 
 export function collectDogrulamaHelperlari(ctx: StaticContext): Set<string> {
-  const dogrudan = new Set<string>();
-  const govdeler = new Map<string, string>();
-
-  for (const file of ctx.files) {
-    if (!/\.(ts|tsx|js|jsx|mjs|cjs)$/.test(file)) continue;
-    if (/(test|spec|__tests__|fixtures?)/.test(file)) continue;
-    const content = ctx.read(file);
-    if (!content) continue;
-
-    TANIM.lastIndex = 0;
-    let m: RegExpExecArray | null;
-    while ((m = TANIM.exec(content)) !== null) {
-      const ad = m[1] || m[2] || m[3] || m[4];
-      if (!ad || !DOGRULAMA_ADI.test(ad)) continue;
-      const body = content.slice(m.index, m.index + 1200);
-      govdeler.set(ad, body);
-      if (DOGRULAMA_SINYALI.test(body)) dogrudan.add(ad);
-    }
-  }
-
-  // Sarmalayıcılar: bilinen bir kapıyı çağıran kapı da kapıdır (3 tur).
-  const hepsi = new Set(dogrudan);
-  for (let tur = 0; tur < 3; tur += 1) {
-    for (const [ad, body] of govdeler) {
-      if (hepsi.has(ad)) continue;
-      for (const bilinen of hepsi) {
-        if (new RegExp(`\\b${bilinen}\\s*\\(`).test(body)) {
-          hepsi.add(ad);
-          break;
-        }
-      }
-    }
-  }
-  return hepsi;
+  return collectHelperlar(ctx, SPEC);
 }

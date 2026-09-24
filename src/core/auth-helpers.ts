@@ -1,4 +1,5 @@
 import type { StaticContext } from "./rule.js";
+import { callsHelper, collectHelperlar } from "./kesif.js";
 
 /**
  * Discovers a project's OWN auth helpers.
@@ -12,6 +13,8 @@ import type { StaticContext } from "./rule.js";
  * The fix is not a longer list: we decide whether a function is an auth helper
  * FROM ITS BODY. Any function that reads a session, cookie or token and returns
  * an identity counts as an auth check for the routes that call it.
+ *
+ * The engine lives in core/kesif.ts; this file is the identity expertise.
  */
 
 /** Signals that a function body does identity work. */
@@ -33,65 +36,14 @@ const KIMLIK_SINYALI =
 // degil, yanlis NEGATIF duzeltmesidir.
 const KIMLIK_ADI = /^(get|require|resolve|current|ensure|assert|fetch|load|read)?\s*\w*(actor|user|session|identity|principal|viewer|account|auth|member|subject|caller|client|tenant|workspace|org|admin|owner|role|guard|gate|yonetici)\w*$/i;
 
-// Dördüncü biçim (gerçek vaka — bir e-ticaret CRM projesi, 12 sahte HIGH): React cache()
-// sarmalı. `export const getUserRole = cache(async () => ...)` yazan bir kapı,
-// TANIM deseni `= cache(` değerini tanımadığı için keşfe HİÇ düşmüyor,
-// callsAuthHelper başarısız oluyor ve TAM KORUMALI fonksiyon "auth yok"
-// diye işaretleniyordu. Sarmalayıcı adı (cache/memo/unstable_cache) bilinçli
-// olarak serbest: karar gövde sinyalinden gelir, adından değil.
-const TANIM =
-  /export\s+(?:async\s+)?function\s+(\w+)|(?:export\s+)?(?:async\s+)?function\s+(\w+)|(?:export\s+)?const\s+(\w+)\s*=\s*(?:async\s*)?\(|(?:export\s+)?const\s+(\w+)\s*=\s*\w+\s*\(/g;
+const SPEC = { ad: KIMLIK_ADI, sinyal: KIMLIK_SINYALI } as const;
 
-/**
- * The names of the project's auth helpers.
- *
- * Two passes: first the functions whose body carries a direct identity signal,
- * then the wrappers that call them (`adminActor()` → `getPanelActor()` →
- * cookie). A single pass would miss every helper wrapped one level deep — and in
- * real projects wrapping is the rule, not the exception.
- */
+/** The names of the project's auth helpers. */
 export function collectAuthHelpers(ctx: StaticContext): Set<string> {
-  const dogrudan = new Set<string>();
-  const govdeler = new Map<string, string>();
-
-  for (const file of ctx.files) {
-    if (!/\.(ts|tsx|js|jsx|mjs)$/.test(file)) continue;
-    if (/\.(test|spec)\./.test(file)) continue;
-    const content = ctx.read(file);
-    if (!content) continue;
-
-    TANIM.lastIndex = 0;
-    let m: RegExpExecArray | null;
-    while ((m = TANIM.exec(content)) !== null) {
-      const ad = m[1] || m[2] || m[3] || m[4];
-      if (!ad || !KIMLIK_ADI.test(ad)) continue;
-      const body = content.slice(m.index, m.index + 1200);
-      govdeler.set(ad, body);
-      if (KIMLIK_SINYALI.test(body)) dogrudan.add(ad);
-    }
-  }
-
-  // Collect wrappers: a helper that calls a known helper counts too.
-  // Three rounds, a reasonable chain depth; more is not seen in practice.
-  const hepsi = new Set(dogrudan);
-  for (let tur = 0; tur < 3; tur += 1) {
-    for (const [ad, body] of govdeler) {
-      if (hepsi.has(ad)) continue;
-      for (const bilinen of hepsi) {
-        if (new RegExp(`\\b${bilinen}\\s*\\(`).test(body)) {
-          hepsi.add(ad);
-          break;
-        }
-      }
-    }
-  }
-  return hepsi;
+  return collectHelperlar(ctx, SPEC);
 }
 
 /** Does the given content call one of the project's auth helpers? */
 export function callsAuthHelper(content: string, helpers: Set<string>): boolean {
-  for (const ad of helpers) {
-    if (new RegExp(`\\b${ad}\\s*\\(`).test(content)) return true;
-  }
-  return false;
+  return callsHelper(content, helpers);
 }

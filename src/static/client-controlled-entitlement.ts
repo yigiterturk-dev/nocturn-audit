@@ -2,6 +2,8 @@ import type { Finding } from "../core/finding.js";
 import { fileEvidence } from "../core/finding.js";
 import type { StaticContext, StaticRule } from "../core/rule.js";
 import { kapsamdaTanim, lineNo, ts } from "../core/ast.js";
+import { callsAuthHelper, collectAuthHelpers } from "../core/auth-helpers.js";
+import { collectDogrulamaHelperlari } from "../core/gate-helpers.js";
 
 /**
  * A01 — client-controlled entitlement.
@@ -95,6 +97,14 @@ export const clientControlledEntitlement: StaticRule = {
   confidence: "likely",
   run(ctx: StaticContext): Finding[] {
     const findings: Finding[] = [];
+    // The project's OWN gate helpers, discovered from function bodies
+    // (core/kesif.ts). GUARD's name-shapes (requireX/isPatron…) stay as the
+    // base; discovery covers the names no fixed list ever predicted.
+    const authKapilari = collectAuthHelpers(ctx);
+    const dogrulamaKapilari = collectDogrulamaHelperlari(ctx);
+    const kapili = (kod: string): boolean =>
+      GUARD.test(kod) || callsAuthHelper(kod, authKapilari) ||
+      callsAuthHelper(kod, dogrulamaKapilari);
 
     for (const file of ctx.files) {
       if (/(test|spec|__tests__|fixtures?|\.d\.ts$)/.test(file)) continue;
@@ -131,7 +141,7 @@ export const clientControlledEntitlement: StaticRule = {
         if (!tanim?.initializer) return false;
         const init = tanim.initializer.getText(tree.source);
         // A guard on the derivation itself (a filter, a price check) clears it.
-        if (GUARD.test(init)) return false;
+        if (kapili(init)) return false;
         if (USER_INPUT.test(init)) return true;
 
         /**
@@ -158,7 +168,7 @@ export const clientControlledEntitlement: StaticRule = {
           ? shorthand
           : raw.slice(raw.indexOf(":", raw.search(FIELD_ASSIGN)) + 1);
         // A guard next to the write itself (ternary on a price, a server constant).
-        if (GUARD.test(value)) continue;
+        if (kapili(value)) continue;
 
         const directInput = USER_INPUT.test(value);
         const varAd = /^\s*([A-Za-z_$][\w$]*)\s*[,}]?\s*$/.exec(
@@ -194,7 +204,7 @@ export const clientControlledEntitlement: StaticRule = {
         const KAPI =
           /\b(?:if|unless)\s*\([^)]*\b(role|roles|permission|permissions|yetki|izin|actor|member|session)\b[^)]*\)\s*(?:\{[^}]{0,120})?\s*(?:redirect|throw|return\s+(?:new\s+)?(?:NextResponse|Response)[^;]*\b(?:401|403)|return\s+null)/i;
         if (KAPI.test(yakinBaglam)) continue;
-        if (GUARD.test(yakinBaglam)) continue;
+        if (kapili(yakinBaglam)) continue;
 
         findings.push({
           ruleId: this.id,

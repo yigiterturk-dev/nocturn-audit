@@ -1,6 +1,7 @@
 import type { Finding } from "../core/finding.js";
 import { fileEvidence } from "../core/finding.js";
 import type { StaticRule } from "../core/rule.js";
+import { callsAuthHelper, collectAuthHelpers } from "../core/auth-helpers.js";
 
 /**
  * A01 — IDOR paterni.
@@ -41,15 +42,21 @@ export const idorDirectObject: StaticRule = {
   requires: [],
   run(ctx): Finding[] {
     const findings: Finding[] = [];
+    // The project's OWN auth helpers (body-signal discovery, core/kesif.ts).
+    // GUARD_HINTS alone missed custom-named guards and flagged protected
+    // routes as IDOR — the fixed list is kept for structural gates
+    // (permissions.includes etc.), discovery covers the named ones.
+    const authHelpers = collectAuthHelpers(ctx);
     for (const file of ctx.files) {
       const f = file.replace(/\\/g, "/");
       if (!/(app\/|pages\/api\/|route\.|\/api\/|actions?\.|lib\/)/.test(f))
         continue;
       const content = ctx.read(file);
       if (!content) continue;
-      // If the file has a guard (requireAdmin/requireGate/requireAuth) the ownership
-      // boundary is already protected; in a single-tenant/single-admin app IDOR is n/a → drop.
-      if (GUARD_HINTS.test(content)) continue;
+      // If the file has a guard (requireAdmin/requireGate/requireAuth or the
+      // project's own helper) the ownership boundary is already protected; in a
+      // single-tenant/single-admin app IDOR is n/a → drop.
+      if (GUARD_HINTS.test(content) || callsAuthHelper(content, authHelpers)) continue;
       const lines = content.split(/\r?\n/);
 
       for (let i = 0; i < lines.length; i++) {

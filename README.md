@@ -25,6 +25,7 @@ npx github:yigiterturk-dev/nocturn-audit scan   # scan it
 | Precision on code I did not write | **82%** (18 TP / 4 FP) | 4 third-party repos: flask, express, full-stack-fastapi-template, vercel/commerce — [write-up](docs/dis-precision-2026-09-23.md) |
 | Precision on the labelled corpus | **81%** (95 TP / 22 FP) | 12 projects, hand-labelled; `nocturn-audit precision --ci` is a CI gate |
 | Recall, static | **48 of 70** static rules exercised | two deliberately vulnerable projects (`test/canary`, `test/canary-sqlite`) |
+| Recall, ground truth | **79%** (27/34 known-true bugs caught) | a 34-fixture suite of realistic vulnerabilities, one known-true bug each; misses are documented blind spots, and `nocturn-audit recall --ci` is a CI gate that can only move the number up |
 | Recall, live | **10 of 13** live rules exercised | a deliberately vulnerable local server (`test/canli-sunucu.mjs`) |
 | Rules | **83** (70 static, 13 live) | OWASP Top 10 (2021) mapped |
 | Tests | **731** | `npm run verify` = build + tests + precision gate |

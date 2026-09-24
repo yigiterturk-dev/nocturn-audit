@@ -20,6 +20,7 @@ import { runInvariants } from "./invariants.js";
 import {
   collectFindings, computePrecision, loadLabels, saveLabels, syncLabels, checkRegressions,
 } from "./precision.js";
+import { measureRecall, formatRecallReport, recallPaths } from "./recall.js";
 import { computeDiff, readReport } from "./diff.js";
 import { scaffoldRule } from "./scaffold.js";
 
@@ -604,6 +605,53 @@ program
       );
     }
     console.log("");
+  });
+
+program
+  .command("recall")
+  .description("Measure rule recall against the known-true fixture suite")
+  .option("--manifest <path>", "manifest file (default corpus/recall/manifest.json)")
+  .option("--fixtures <path>", "fixtures dir (default corpus/recall/fixtures)")
+  .option("--min <pct>", "CI gate: fail if recall is below this percent", parseFloat)
+  .option("--ci", "regression gate: exit 1 if recall drops below --min (default: last measured baseline)")
+  .action(async (opts) => {
+    const paths = recallPaths(PROJECT_ROOT);
+    const manifestPath = opts.manifest ? resolve(opts.manifest) : paths.manifest;
+    const fixturesDir = opts.fixtures ? resolve(opts.fixtures) : paths.fixtures;
+
+    let min = opts.min as number | undefined;
+    if (!min && opts.ci) {
+      const baselinePath = join(PROJECT_ROOT, "corpus", "recall", "baseline.json");
+      if (existsSync(baselinePath)) {
+        try {
+          min = JSON.parse(readFileSync(baselinePath, "utf-8")).minRecallPct;
+        } catch { /* gate falls through to explicit --min */ }
+      }
+    }
+
+    console.log(pc.dim(`\nRecall suite: ${manifestPath}`));
+    let res;
+    try {
+      res = await measureRecall(manifestPath, fixturesDir);
+    } catch (e) {
+      console.error(pc.red(`  ⛔ ${(e as Error).message}`));
+      process.exit(2);
+    }
+    console.log(formatRecallReport(res));
+
+    if (opts.ci) {
+      if (min == null) {
+        console.error(pc.red("  ⛔ CI gate needs --min <pct> (or corpus/recall/baseline.json)."));
+        process.exit(2);
+      }
+      if (res.recall * 100 >= min) {
+        console.log(pc.green(`  ✓ RECALL GATE PASSED — ${((res.recall) * 100).toFixed(1)}% ≥ ${min}%`));
+        console.log("");
+        return;
+      }
+      console.error(pc.red(`  ⛔ RECALL GATE FAILED — ${((res.recall) * 100).toFixed(1)}% < ${min}%`));
+      process.exit(1);
+    }
   });
 
 program

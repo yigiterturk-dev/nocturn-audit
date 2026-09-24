@@ -30,29 +30,37 @@ const isSourceLike = (f: string) =>
 const girinti = (t: string): number => (t.match(/^[ \t]*/)?.[0].length ?? 0);
 const isPyFuncHead = (t: string) => /^\s*(async\s+def|def)\s+\w+/.test(t);
 const isPyBoundary = (t: string) => /^\s*(async\s+def|def|class)\s+\w+/.test(t);
+// JS/TS function heads: declarations, const arrows, method shorthand. Needed
+// because the ORM branch is JS-shaped and the whole-file "function" fallback
+// broke same-function precision.
+const isJsFuncHead = (t: string) =>
+  /^\s*(export\s+)?(default\s+)?(async\s+)?function\s+[\w$]+/.test(t) ||
+  /^\s*(export\s+)?(const|let|var)\s+[\w$]+\s*=\s*(async\s*)?(\(|function\b)/.test(t) ||
+  /^\s*(async\s+)?[#$\w]+\s*\([^)]*\)\s*\{/.test(t);
+const isFuncHead = (t: string) => isPyFuncHead(t) || isJsFuncHead(t);
+const isBoundary = (t: string) => isPyBoundary(t) || isJsFuncHead(t);
 
 /** The [start, end) line range (0-indexed) of the function enclosing the INSERT line. */
 function enclosingRange(lines: string[], idx: number): [number, number] {
-  const py = true; // Python is indentation based; this works reasonably for JS too
-  // Start: walk up to a 'def' with less indentation.
+  // Start: walk up to a function head with less indentation.
   const insIndent = girinti(lines[idx] ?? "");
   let bas = 0;
   let headIndent = 0;
   for (let i = idx; i >= 0; i--) {
     const l = lines[i] ?? "";
     if (l.trim() === "") continue;
-    if (isPyFuncHead(l) && girinti(l) < insIndent) {
+    if (isFuncHead(l) && girinti(l) < insIndent) {
       bas = i;
       headIndent = girinti(l);
       break;
     }
   }
-  // End: after the function head, a boundary at the same or less indentation (def/class).
+  // End: after the function head, a boundary at the same or less indentation.
   let son = lines.length;
   for (let i = bas + 1; i < lines.length; i++) {
     const l = lines[i] ?? "";
     if (l.trim() === "") continue;
-    if (isPyBoundary(l) && girinti(l) <= headIndent) {
+    if (isBoundary(l) && girinti(l) <= headIndent) {
       son = i;
       break;
     }
@@ -123,6 +131,61 @@ export const checkThenActUpsert: StaticRule = {
           "Tek atomik ifade: `INSERT ... ON CONFLICT(anahtar) DO UPDATE SET ...` " +
           "(SQLite/Postgres) / `ON DUPLICATE KEY UPDATE` (MySQL). Alternatif: " +
           "Wrap the INSERT in `try/except IntegrityError` and fall back to an update.",
+      });
+    }
+
+    // ORM BRANCH (2026-09-24): findUnique/findFirst ("does it exist?") followed
+    // by create/update on the SAME accessor in the SAME function is the same
+    // TOCTOU race in ORM clothes — no `INSERT INTO` text for the pass above to
+    // see (recall suite: lib/save-order.ts). Safe: upsert() and $transaction
+    // are atomic alternatives.
+    const ormHits = ctx.grep(/\.\s*(findUnique|findFirst)\s*\(/);
+    const islemGorulen = new Set<string>();
+    for (const m of ormHits) {
+      if (!/\.(ts|tsx|js|jsx|mjs|cjs)$/.test(m.file)) continue;
+      if (/(test|spec|conftest|fixtures?)/.test(m.file)) continue;
+      const content = ctx.read(m.file);
+      if (!content) continue;
+      const lines = content.split(/\r?\n/);
+      const line = lines[m.line - 1] ?? "";
+      const am = /\.(\w+)\s*\.\s*(findUnique|findFirst)\s*\(/.exec(line);
+      if (!am) continue;
+      const erisici = am[1];
+      const anahtar = `${m.file}::${erisici}::${m.line}`;
+      if (islemGorulen.has(anahtar)) continue;
+
+      const [bas, son] = enclosingRange(lines, m.line - 1);
+      const body = lines.slice(bas, son).join("\n");
+
+      // atomic alternatives win
+      if (new RegExp(`\\.${erisici}\\s*\\.\\s*upsert\\s*\\(`).test(body)) continue;
+      if (/\$\s*transaction\s*\(/.test(body)) continue;
+
+      // the write on the SAME accessor, in the SAME function, plus a branch
+      const yazma = new RegExp(
+        `\\.${erisici}\\s*\\.\\s*(create|update|createMany|updateMany|delete|deleteMany)\\s*\\(`,
+      );
+      const yazmaSatiri = lines.findIndex(
+        (l, i) => i >= bas && i < son && yazma.test(l),
+      );
+      if (yazmaSatiri === -1) continue;
+      if (!/\bif\s*\(|\?\s*[^:?]+\s*:/.test(body)) continue;
+
+      islemGorulen.add(anahtar);
+      findings.push({
+        ruleId: this.id,
+        title: "Check-then-act race in ORM access (findUnique → create/update, not atomic)",
+        owasp: this.owasp,
+        severity: "low",
+        description:
+          `${m.file}:${m.line} — the same function asks "${erisici}.findUnique/findFirst" ` +
+          `and then writes via "${erisici}.${lines[yazmaSatiri].match(yazma)?.[1]}()" (line ${yazmaSatiri + 1}). ` +
+          `The check and the write are not atomic: two concurrent callers can both see "missing" and both create, ` +
+          `producing duplicates or a unique-constraint failure.`,
+        evidence: [fileEvidence(m.file, yazmaSatiri + 1, lines[yazmaSatiri].trim().slice(0, 100))],
+        remediation:
+          "Use the atomic alternative: prisma's upsert() (create or update in one call) or wrap " +
+          "check+write in a transaction with a unique constraint as the final guard.",
       });
     }
     return findings;

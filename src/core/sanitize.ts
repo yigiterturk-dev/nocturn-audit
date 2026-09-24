@@ -30,6 +30,18 @@ function isPlainText(dize: string): boolean {
   if (kelimeler.length < 4) return false;
   // Strings containing template interpolation can carry code; left untouched.
   if (/\$\{/.test(content)) return false;
+  // A SQL statement inside a string is CODE, not prose: a query literal is
+  // exactly what injection rules must see, and the classic hole is a
+  // sentence-length query ("SELECT * FROM urunler WHERE ad ILIKE ...")
+  // concatenated with user input. Blanking it hid the hole (recall suite:
+  // app/api/search/route.ts).
+  if (
+    /\b(select\s.+from|insert\s+into|update\s+\w+\s+set|delete\s+from|where\s|order\s+by|group\s+by|ilike)\b/i.test(
+      content,
+    )
+  ) {
+    return false;
+  }
   return true;
 }
 

@@ -1,6 +1,6 @@
 {
   "name": "nocturn-audit",
-  "version": "0.1.8",
+  "version": "0.1.9",
   "description": "Security audit CLI with measured precision: OWASP Top 10 rules, a synthetic canary for recall, and a CI gate that stops precision from regressing.",
   "type": "module",
   "bin": {

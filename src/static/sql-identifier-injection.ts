@@ -41,6 +41,15 @@ const DICT_KEY_SOURCE =
   /\.items\(\)|\.keys\(\)|for\s+\w+\s*,\s*\w+\s+in\s+\w+\.items|request\.|form\.get|args\.get|params\[|query\[/;
 
 const isPython = (f: string) => /\.py$/.test(f);
+const isTsJs = (f: string) => /\.(ts|tsx|js|jsx|mjs|cjs)$/.test(f);
+
+// TS/JS template-literal shape: a SQL keyword followed DIRECTLY by an
+// interpolation — `FROM ${tablo}`, `SET ${assignments}` — i.e. the identifier
+// position. Value positions (`WHERE id = ${id}`) do NOT match: the keyword is
+// followed by a column name, not `${`.
+const TS_IDENT_POSITION =
+  /\b(SET|FROM|JOIN|TABLE|INTO|UPDATE|ORDER\s+BY|GROUP\s+BY)\b\s*\$\{/i;
+const TS_INPUT_SOURCE = /(request\.|req\.|params|query|body|searchParams|args\.)/i;
 
 export const sqlIdentifierInjection: StaticRule = {
   id: "a03-sql-identifier-injection",
@@ -53,8 +62,8 @@ export const sqlIdentifierInjection: StaticRule = {
   run(ctx): Finding[] {
     const findings: Finding[] = [];
     for (const file of ctx.files) {
-      if (!isPython(file)) continue;
       if (/(test|spec|conftest|fixtures?)/.test(file)) continue;
+      if (!isPython(file) && !isTsJs(file)) continue;
       const content = ctx.read(file);
       if (!content) continue;
       const lines = content.split(/\r?\n/);
@@ -62,9 +71,47 @@ export const sqlIdentifierInjection: StaticRule = {
       for (let i = 0; i < lines.length; i++) {
         const raw = lines[i];
         if (raw.trim().startsWith("#")) continue;
-        // f-string SQL with interpolation in an identifier position
         const window = lines.slice(Math.max(0, i - 2), i + 3).join("\n");
         if (!SQL_STMT.test(window)) continue;
+
+        // TS/JS BRANCH: template literal with an interpolation in identifier
+        // position. Missed by the recall suite (rule used to be Python-only).
+        if (isTsJs(file)) {
+          if (!TS_IDENT_POSITION.test(raw)) continue;
+          // allowlist-guarded identifiers are the correct pattern
+          if (/allowlist|beyaz|whitelist|_COLUMNS|_SUTUN|\.includes\s*\(/i.test(window)) continue;
+          const interpName = /\$\{([a-zA-Z_][\w]*)\}/.exec(raw);
+          if (!interpName) continue; // only flag a simple identifier binding
+          const ad = interpName[1];
+          const girsel = TS_INPUT_SOURCE.test(window);
+          if (!girsel) {
+            const sabitGibi = /^[A-Z][A-Z0-9_]*$/.test(ad);
+            const sqlParcasi = /(kosul|where|filter|clause|sql|cond|columns|sutun)/i.test(ad);
+            if (sabitGibi || sqlParcasi) continue;
+          }
+          findings.push({
+            ruleId: this.id,
+            title: this.title,
+            owasp: this.owasp,
+            severity: girsel ? "high" : "medium",
+            description:
+              `${file}:${i + 1} interpolates a variable into a SQL identifier ` +
+              `(SET/FROM/JOIN/table position) inside a template literal. Identifiers ` +
+              `cannot be parameterised` +
+              (girsel
+                ? ` and the variable appears to come from external input — a value like ` +
+                  `"users DROP TABLE x --" changes the statement's meaning.`
+                : ` — confirm the source is not external input.`),
+            evidence: [fileEvidence(file, i + 1, raw.trim().slice(0, 100))],
+            remediation:
+              "Constrain table/column names to a fixed ALLOWLIST map " +
+              "(e.g. const TABLES = { orders: 'orders' }) and look the identifier up. " +
+              "Never take an identifier straight from external input.",
+          });
+          break; // one finding per file is enough
+        }
+
+        // f-string SQL with interpolation in an identifier position
         if (!FSTRING_INTERP.test(raw) && !/\{[^}]+\}/.test(raw)) continue;
         if (!IDENT_POSITION.test(window)) continue;
 

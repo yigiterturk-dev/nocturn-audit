@@ -47,6 +47,37 @@ function algNoneMi(ast: ReturnType<typeof Object>, c: any): boolean {
   return false;
 }
 
+/** Does the call resolve to a JWT library's sign? */
+function jwtSignMi(ast: AstFile, c: ts.CallExpression): boolean {
+  const e = c.expression;
+  if (ts.isIdentifier(e)) {
+    const k = ast.ithal.get(e.text);
+    return !!k && JWT_MODULES.includes(k.modul) && ["sign", "SignJWT"].includes(k.disAd);
+  }
+  if (ts.isPropertyAccessExpression(e) && ts.isIdentifier(e.expression)) {
+    const k = ast.ithal.get(e.expression.text);
+    if (!k || !JWT_MODULES.includes(k.modul)) return false;
+    return k.disAd === "*" || k.disAd === "default"
+      ? ["sign", "SignJWT"].includes(e.name.text)
+      : false;
+  }
+  return false;
+}
+
+/** Does the call's options object contain algorithm: "none"? */
+function signAlgNoneMi(ast: AstFile, c: ts.CallExpression): boolean {
+  const opts = c.arguments[2];
+  if (!opts || !ts.isObjectLiteralExpression(opts)) return false;
+  for (const prop of opts.properties) {
+    if (!ts.isPropertyAssignment(prop) || !ts.isIdentifier(prop.name)) continue;
+    if (prop.name.text !== "algorithm") continue;
+    const init = prop.initializer;
+    if (!ts.isStringLiteral(init)) continue;
+    if (init.text.toLowerCase() === "none") return true;
+  }
+  return false;
+}
+
 export const jwtAlgNone: StaticRule = {
   id: "a07-jwt-alg-none",
   title: "JWT verification accepts the 'none' algorithm",
@@ -64,6 +95,24 @@ export const jwtAlgNone: StaticRule = {
       if (!ast) continue;
       cagrilariGez(ast, (c) => {
         if (!ts.isCallExpression(c)) return;
+        // SIGN SIDE: jwt.sign(payload, "", { algorithm: "none" }) produces a
+        // token with no signature at all. Missed by the recall suite fixture.
+        if (jwtSignMi(ast, c) && signAlgNoneMi(ast, c)) {
+          const line = lineNo(ast, c);
+          findings.push({
+            ruleId: this.id,
+            title: "JWT is signed with the 'none' algorithm",
+            owasp: this.owasp,
+            severity: "high",
+            confidence: "certain",
+            description:
+              "A JWT is created with algorithm 'none' — anyone can forge this token, and any verifier that accepts unsigned tokens accepts forgeries.",
+            evidence: [fileEvidence(file, line, lineText(ast, c))],
+            remediation:
+              "Sign with a real algorithm (e.g. HS256 with a strong secret, or RS256). Never use 'none'.",
+          });
+          return;
+        }
         if (!jwtVerifyMi(ast, c)) return;
         if (!algNoneMi(ast, c)) return;
         const line = lineNo(ast, c);

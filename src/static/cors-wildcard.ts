@@ -14,6 +14,11 @@ const ACAC_TRUE =
 // reflecting the origin from the request (a dynamic, unsafe allowlist)
 const ORIGIN_REFLECT =
   /Access-Control-Allow-Origin["'\s:=,]+[^*\n]{0,40}(req\.headers|request\.headers|origin)/i;
+// MIDDLEWARE/CONFIG SHAPE: the `cors` package's option object never spells out
+// the header, yet `cors({ origin: "*" })` (and `origin: true` = reflect-every)
+// is the same hole. Missed by the recall suite's lib/cors.ts fixture.
+const CORS_MW_WILDCARD =
+  /\bcors\s*\(\s*\{[^}]{0,200}?origin\s*:\s*("\*"|'\*'|true)/i;
 
 export const corsWildcard: StaticRule = {
   id: "a05-cors-misconfiguration",
@@ -28,7 +33,8 @@ export const corsWildcard: StaticRule = {
     for (const file of ctx.files) {
       const content = ctx.read(file);
       if (!content) continue;
-      const wildcard = ACAO_WILDCARD.test(content);
+      const wildcard =
+        ACAO_WILDCARD.test(content) || CORS_MW_WILDCARD.test(content);
       const credentials = ACAC_TRUE.test(content);
       let reflect = ORIGIN_REFLECT.test(content);
 
@@ -47,7 +53,8 @@ export const corsWildcard: StaticRule = {
       for (let i = 0; i < lines.length; i++) {
         if (
           ACAO_WILDCARD.test(lines[i]) ||
-          ORIGIN_REFLECT.test(lines[i])
+          ORIGIN_REFLECT.test(lines[i]) ||
+          CORS_MW_WILDCARD.test(lines[i])
         ) {
           line = i + 1;
           snippet = lines[i];

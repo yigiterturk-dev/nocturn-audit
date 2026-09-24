@@ -42,7 +42,40 @@ export const unboundedPaidLoop: StaticRule = {
   requires: [],
   run(ctx): Finding[] {
     const findings: Finding[] = [];
-    const hits = ctx.grep(PAID_API);
+
+    // ONE-HOP WRAPPER RESOLUTION (2026-09-24): the common shape is a local
+    // wrapper (`jevSkorla`) whose body calls the paid API, and the LOOP calls
+    // the wrapper. The allowlist above only matched the library call itself,
+    // so wrapped loops were invisible (recall suite: lib/toplu-analiz.ts).
+    // Phase 1: any function whose body contains a paid call is a wrapper name.
+    const sarmalayici = new Set<string>();
+    for (const m of ctx.grep(PAID_API)) {
+      if (!isSourceLike(m.file)) continue;
+      const content = ctx.read(m.file);
+      if (!content) continue;
+      const lines = content.split(/\r?\n/);
+      for (let i = m.line - 1; i >= Math.max(0, m.line - 40); i--) {
+        const l = lines[i] ?? "";
+        const head =
+          /^\s*(?:export\s+)?(?:default\s+)?(?:async\s+)?function\s+([\w$]+)/.exec(l) ??
+          /^\s*(?:export\s+)?(?:const|let|var)\s+([\w$]+)\s*=\s*(?:async\s*)?\(/.exec(l) ??
+          /^\s*(?:async\s+)?([\w$]+)\s*\([^)]*\)\s*:\s*[\w<>\[\]| ]+\s*\{/.exec(l);
+        if (head) {
+          sarmalayici.add(head[1]);
+          break;
+        }
+      }
+    }
+    // Phase 2: calls to those wrapper names count as paid calls too.
+    const hits = [
+      ...ctx.grep(PAID_API),
+      ...(sarmalayici.size
+        ? ctx.grep(
+            new RegExp(`\\b(${[...sarmalayici].map((a) => a.replace(/\$/g, "\\$")).join("|")})\\s*\\(`),
+          )
+        : []),
+    ];
+
     const flagged = new Set<string>();
 
     for (const m of hits) {

@@ -31,6 +31,48 @@ export const weakHash: StaticRule = {
       const content = ctx.read(file);
       if (!content) continue;
       const lines = content.split(/\r?\n/);
+
+      // NAME→SINK LINKING: the HARDCODED_JWT line pattern only catches the
+      // declaration when it spells out jwt/token on the SAME line, in the
+      // right order. The common shape — a generically-named const
+      // (`const SECRET = "..."`) later fed to `jwt.sign(payload, SECRET)` —
+      // slipped through (recall suite: lib/jwt-sign.ts). Link the const to
+      // the sign sink across the file.
+      const sirKandidatlari = new Map<string, number>();
+      lines.forEach((l, idx) => {
+        if (JWT_ENV.test(l)) return;
+        const m =
+          /\b(?:const|let|var)\s+([A-Za-z_][\w]*)\s*=\s*["'`][^"'`\n]{8,}["'`]/.exec(l);
+        if (!m) return;
+        const ad = m[1];
+        if (/^(secret|sifre|parola|token|key)/i.test(ad) || /^[A-Z][A-Z0-9_]{3,}$/.test(ad)) {
+          sirKandidatlari.set(ad, idx);
+        }
+      });
+      for (const [ad, idx] of sirKandidatlari) {
+        const sigar = new RegExp(`\\.sign\\s*\\([^)]*[\\s(,]${ad}\\b`);
+        const siron = lines.findIndex((l) => sigar.test(l));
+        if (siron === -1) continue;
+        findings.push({
+          ruleId: this.id,
+          title: "Sabit (hardcoded) JWT secret",
+          owasp: this.owasp,
+          severity: "high",
+          description:
+            `The constant "${ad}" holds a hardcoded string and is passed to a JWT sign call ` +
+            `(line ${siron + 1}). Once this fixed secret leaks with the repository, tokens can be forged.`,
+          evidence: [
+            fileEvidence(
+              file,
+              idx + 1,
+              lines[idx].replace(/["'`][^"'`\n]{8,}["'`]/, '"…redacted…"'),
+            ),
+          ],
+          remediation:
+            "Read the JWT secret from an environment variable, use a strong random value, and plan for rotation.",
+        });
+      }
+
       for (let i = 0; i < lines.length; i++) {
         const raw = lines[i];
 

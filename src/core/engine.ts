@@ -151,7 +151,11 @@ const IGNORE_GLOBS = [
   "**/coverage/**",
   "**/.git/**",
   "**/out/**",
-  "**/report/**", // do not scan the tool's own report output
+  // The tool's own report output lives at the project ROOT. A blanket
+  // `**/report/**` silently skipped REAL app code in any `report/` folder
+  // (e.g. `app/api/report/route.ts` — proven by the recall suite). Root-only
+  // keeps the intended skip and closes the hole.
+  "report/**",
   "**/corpus/**", // the tool's own corpus DATA (labels.json / bug-db.json —
                   // it holds snippets of scanned code as strings, and produced
                   // CERTAIN false positives when dogfooding: patterns such as
